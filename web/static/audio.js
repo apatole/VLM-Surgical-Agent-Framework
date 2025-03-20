@@ -1,15 +1,3 @@
-// Copyright (c) MONAI Consortium
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//     http://www.apache.org/licenses/LICENSE-2.0
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-
 let audioContext = null;
 let mediaStream = null;
 let recorder = null;
@@ -26,6 +14,11 @@ async function startAudio() {
     recording = true;
 
     try {
+        // Check if mediaDevices API is available
+        if (!navigator.mediaDevices) {
+            throw new Error("MediaDevices API not available. This may be because you're not using HTTPS or your browser doesn't support it.");
+        }
+        
         // Request microphone
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
 
@@ -44,6 +37,12 @@ async function startAudio() {
     } catch (err) {
         console.error("Error starting audio:", err);
         recording = false;
+        // Display a user-friendly message in the UI
+        alert("Microphone access error: " + err.message + 
+              "\n\nThis may be because:\n" +
+              "1. You're not using HTTPS (required for microphone access)\n" +
+              "2. You denied microphone permission\n" +
+              "3. Your browser doesn't support the MediaDevices API");
         throw err;
     }
 }
@@ -71,6 +70,15 @@ async function stopAudio() {
             console.log("Total recorded chunks:", audioChunks.length);
             const fullBlob = new Blob(audioChunks, { type: "audio/webm" });
             const arrayBuf = await fullBlob.arrayBuffer();
+
+            // Capture a frame to send along with the audio, store in sessionStorage for use later
+            if (typeof captureVideoFrame === 'function') {
+                const frameData = captureVideoFrame();
+                if (frameData) {
+                    console.log("Captured frame for audio processing");
+                    sessionStorage.setItem('lastCapturedFrame', frameData);
+                }
+            }
 
             const audioUrl = `${getWebsocketProtocol()}${window.location.hostname}:49001`;
             audioWS = new WebSocket(audioUrl);

@@ -21,6 +21,13 @@ agent_prompt: |
   1) Structured annotation data from the procedure (timeline of phases, tools, steps).
   2) Short 'notes' from the NotetakerAgent about any other notable events, or surgeon requests.
 
+  IMPORTANT GUIDELINES:
+  - Pay careful attention to the exact number of notes provided. Count them correctly.
+  - Always include ALL tools identified in the annotations, not just a subset.
+  - Always include ALL phases identified in the annotations.
+  - Always include ALL anatomical structures identified in the annotations.
+  - Be accurate about quantities - if there's only 1 note, don't claim there are multiple notes.
+
   The final note must be a *high-level summary* in standard post-op note format, typically including:
    - Date/time of procedure, whether it was elective or emergency
    - Names of operating surgeon, assistant, anesthetist
@@ -87,7 +94,7 @@ grammar: |
     ]
   }
 
-model_name: "models/Llama-3.2-11B-lora-surgical-4bit/"
+model_name: "models/llm/Llama-3.2-11B-lora-surgical-4bit/"
 llm_url: "http://127.0.0.1:8000/v1"
 
 publish:

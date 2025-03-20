@@ -1,0 +1,31 @@
+{
+  "name": "surgical-agentic-framework",
+  "version": "1.0.0",
+  "description": "Surgical Agentic Framework Demo",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build:tailwind": "npx tailwindcss -i web/static/tailwind-custom.css -o web/static/styles.compiled.css",
+    "watch:tailwind": "npx tailwindcss -i web/static/tailwind-custom.css -o web/static/styles.compiled.css --watch",
+    "dev:server": "nodemon --watch servers --watch utils --watch agents --ext py --exec \"python servers/web_server.py --host ${FLASK_HOST:-127.0.0.1} --port ${FLASK_PORT:-8050}\"",
+    "dev:sync": "browser-sync start --proxy '${FLASK_HOST:-localhost}:${FLASK_PORT:-8050}' --host '${FLASK_HOST:-localhost}' --port 3000 --files 'web/static/*.css, web/static/*.js, web/src/**/*.vue, web/src/**/*.js' --no-notify --no-open",
+    "dev:web": "concurrently \"npm run watch:tailwind\" \"npm run dev:server\" \"npm run dev:sync\"",
+    "dev:full": "concurrently \"npm run watch:tailwind\" \"./scripts/start_app.sh\" \"npm run dev:sync\"",
+    "dev": "./scripts/dev.sh",
+    "start": "npm run build:tailwind && ./scripts/start_app.sh"
+  },
+  "dependencies": {
+    "axios": "^1.6.7",
+    "vue": "^3.4.19"
+  },
+  "devDependencies": {
+    "@tailwindcss/forms": "^0.5.7",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "browser-sync": "^3.0.3",
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.1.9",
+    "tailwindcss": "^3.4.1",
+    "vite": "^6.2.2"
+  },
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+}

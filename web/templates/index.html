@@ -3,312 +3,545 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Surgical AI Copilot + TTS</title>
+    <title>Surgical Agentic Framework Demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-    <link rel="stylesheet" href="/static/bootstrap.css">
-    <link rel="stylesheet" href="/static/chat.css">
+    
+    <!-- Tailwind CSS -->
+    <link rel="stylesheet" href="/static/styles.compiled.css">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <!-- Dependencies -->
     <script src="/static/jquery-3.6.3.min.js"></script>
-    <script src="/static/bootstrap.bundle.min.js"></script>
 
     <!-- Our scripts -->
     <script src="/static/websocket.js"></script>
     <script src="/static/audio.js"></script>
-
-    <style>
-      #chat-history-container {
-        overflow-y: auto;
-        background-color: #2f2f2f;
-        border-radius: 5px;
-        padding: 10px;
-        height: 40vh;
-        margin-bottom: 15px;
-      }
-      .user-message {
-        color: #ffffff;
-        background: #4a4a4a;
-        padding: 5px;
-        border-radius: 5px;
-        margin-bottom: 5px;
-      }
-      .agent-message {
-        color: #ffffff;
-        background: #3a3a3a;
-        padding: 5px;
-        border-radius: 5px;
-        margin-bottom: 5px;
-      }
-      #video-container {
-        margin-bottom: 10px;
-        text-align: center;
-      }
-      /* Just for TTS controls styling */
-      #ttsControls {
-        margin-top: 10px;
-        padding: 8px;
-        background-color: #444;
-        border-radius: 5px;
-      }
-      #ttsControls label {
-        margin-right: 6px;
-      }
-      #ttsApiKey {
-        width: 250px;
-      }
-    </style>
-
-    <script>
-      function onChatMessageKey(event) {
-        if (event.which === 13 && !event.shiftKey) {
-          if (!event.repeat) onChatMessageSubmit();
-          event.preventDefault();
-        }
-      }
-
-      function captureVideoFrame() {
-          const video = document.getElementById('surgery-video');
-          if (!video || video.videoWidth === 0) {
-              console.error("Video not ready or no frames available");
-              return null;
-          }
-          const canvas = document.createElement('canvas');
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-          const ctx = canvas.getContext('2d');
-          try {
-              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-              const dataUrl = canvas.toDataURL('image/jpeg');
-              if (dataUrl.startsWith('data:image/jpeg;base64,')) {
-                  return dataUrl;
-              }
-              return null;
-          } catch (e) {
-              console.error("Error capturing frame:", e);
-              return null;
-          }
-      }
-
-      function onChatMessageSubmit() {
-          const input = document.getElementById('chat-message-input');
-          const text = input.value.trim();
-          if (text.length > 0) {
-              console.log("Sending typed message + captured frame if available...");
-              const frameData = captureVideoFrame();
-              if (frameData) {
-                  sendJSON({ user_input: text, frame_data: frameData });
-              } else {
-                  sendJSON({ user_input: text });
-              }
-              addUserMessage(text);  // immediate local echo
-          }
-          input.value = "";
-      }
-
-      function onChatHistoryReset() {
-        sendJSON({ 'chat_history_reset': true });
-        $('#chat-history-container').empty();
-      }
-
-      function addUserMessage(text) {
-        $('#chat-history-container').append(
-          `<div class="user-message"><b>User:</b> ${escapeHtml(text)}</div>`
-        );
-        scrollChatToBottom();
-      }
-
-      function addAgentMessage(text) {
-        $('#chat-history-container').append(
-          `<div class="agent-message"><b>Agent:</b> ${escapeHtml(text)}</div>`
-        );
-        scrollChatToBottom();
-      }
-
-      function scrollChatToBottom() {
-        const container = document.getElementById('chat-history-container');
-        container.scrollTop = container.scrollHeight;
-      }
-
-      function escapeHtml(str) {
-        return str
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;");
-      }
-
-      async function handleTTS(text) {
-        // 1) Check if user wants TTS
-        const ttsCheckbox = document.getElementById('ttsEnable');
-        const userWantsTTS = ttsCheckbox && ttsCheckbox.checked;
-        if (!userWantsTTS) return;
-
-        // 2) Get the user’s ElevenLabs API key
-        const apiKeyInput = document.getElementById('ttsApiKey');
-        if (!apiKeyInput) return;
-        const apiKey = apiKeyInput.value.trim();
-        if (!apiKey) {
-          console.log("TTS enabled but no API key provided");
-          return;
-        }
-
-        console.log("Sending text to TTS:", text);
-        try {
-          const resp = await fetch('/api/tts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: text, api_key: apiKey })
-          });
-          if (!resp.ok) {
-            console.error("TTS error:", resp.status, await resp.text());
-            return;
-          }
-          const data = await resp.json();
-          if (data.tts_base64) {
-            console.log("Playing TTS audio from server...");
-            // Create an HTMLAudioElement from base64
-            const audio = new Audio("data:audio/mpeg;base64," + data.tts_base64);
-            audio.play().catch(e => console.error("Audio play error:", e));
-          } else {
-            console.log("No TTS audio in server response");
-          }
-        } catch (err) {
-          console.error("Error calling TTS:", err);
-        }
-      }
-
-      function handleServerMessage(msg) {
-        console.log("handleServerMessage:", msg);
-
-        // If server requests a frame for recognized text
-        if (msg.request_frame && msg.recognized_text) {
-          const frameData = captureVideoFrame();
-          const payload = {
-            user_input: msg.recognized_text,
-            asr_final: true
-          };
-          if (frameData) {
-            payload.frame_data = frameData;
-          }
-          sendJSON(payload);
-          // Also show recognized text as "User" locally
-          addUserMessage(msg.recognized_text);
-          return;
-        }
-
-        // If there's an agent response
-        if (msg.agent_response) {
-          addAgentMessage(msg.agent_response);
-          // ADDED: TTS the agent's response
-          handleTTS(msg.agent_response);
-        }
-
-        if (msg.user_input && msg.asr_final) {
-          addUserMessage(msg.user_input);
-        }
-      }
-
-      async function toggleMic() {
-        const micBtn = document.getElementById("mic-btn");
-        if (!recording) {
-          console.log("Starting recording...");
-          try {
-            await startAudio();
-            micBtn.textContent = "Stop Mic";
-          } catch (err) {
-            console.error("Microphone access error:", err);
-          }
-        } else {
-          console.log("Stopping recording...");
-          stopAudio();
-          micBtn.textContent = "Start Mic";
-        }
-      }
-
-      // Auto-capture a frame for annotation every 10 seconds
-      const AUTO_CAPTURE_INTERVAL_MS = 10000; // 10 seconds; adjust as needed
-      setInterval(() => {
-        const frameData = captureVideoFrame();
-        if (frameData) {
-          console.log("Automatically sending frame data for annotation...");
-          sendJSON({ auto_frame: true, frame_data: frameData });
-        } else {
-          console.log("No frame captured on auto interval.");
-        }
-      }, AUTO_CAPTURE_INTERVAL_MS);
-
-      window.onload = function() {
-        console.log("Connecting to main WebSocket on port 49000...");
-        connectWebsocket(49000, handleServerMessage);
-      };
-    </script>
+    
 </head>
-<body class="bg-dark">
-  <nav class="navbar navbar-dark bg-dark">
-    <div class="container-fluid">
-      <a class="navbar-brand" href="#">Surgical AI Copilot</a>
-      <div class="d-flex">
-        <button class="btn btn-sm btn-outline-light me-2" onclick="onChatHistoryReset()">Reset Chat</button>
-        <button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#audioDialog">Audio Settings</button>
-      </div>
+<body class="bg-dark-900 font-sans text-white min-h-screen overflow-auto">
+  <nav class="bg-primary-900 shadow-md">
+    <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+      <a class="text-xl font-bold flex items-center" href="#">
+        <i class="fas fa-robot mr-2"></i> Surgical Agentic Framework Demo
+      </a>
     </div>
   </nav>
 
-  <div class="container-fluid mt-3">
-    <div class="row">
-      <div class="col-8">
-        <div id="video-container">
-          <video id="surgery-video" width="960" height="540" controls autoplay muted>
-            <source src="/static/medium_proc.mp4" type="video/mp4">
-            Your browser does not support the video tag.
-          </video>
-        </div>
-
-        <div id="chat-history-container"></div>
-        <div class="input-group">
-          <textarea id="chat-message-input" class="form-control" rows="3"
-                    placeholder="Type a message..." onkeydown="onChatMessageKey(event)"></textarea>
-          <button class="btn btn-secondary" onclick="onChatMessageSubmit()">Send</button>
-          <button class="btn btn-primary ms-2" id="mic-btn" onclick="toggleMic()">Start Mic</button>
+  <div class="container mx-auto px-4 mt-3 pb-8">
+    <!-- Top row with control panels in 3-column layout -->
+    <div class="flex flex-wrap -mx-3 mb-3">
+      <!-- Video Controls Panel -->
+      <div class="w-full lg:w-1/3 px-3 mb-3 lg:mb-0">
+        <div class="bg-dark-800 rounded-lg p-3 shadow-lg border border-dark-700 panel-container">
+          <div class="flex justify-between items-center mb-2">
+            <h5 class="font-semibold flex items-center m-0">
+              <i class="fas fa-video text-primary-400 mr-2"></i> Video Controls
+            </h5>
+            <button type="button" class="btn btn-sm px-2.5 py-1.5 rounded-lg bg-primary-700 text-white hover:bg-primary-600 transition-all duration-200 shadow-sm panel-toggle" data-target="#video-controls-collapse" aria-expanded="true">
+              <i class="fas fa-chevron-down"></i>
+            </button>
+          </div>
+          <div id="video-controls-collapse" class="panel-content">
+            <form id="video-upload-form" enctype="multipart/form-data" class="mb-2" onsubmit="event.preventDefault(); uploadVideo();">
+              <label class="block mb-2 text-sm font-medium text-gray-300">Upload New Video:</label>
+              
+              <div class="flex flex-col sm:flex-row gap-2 mb-3">
+                <div class="flex-grow">
+                  <div class="relative border border-primary-700 bg-dark-700 rounded-lg px-3 py-2 hover:border-primary-500 transition-colors focus-within:ring-2 focus-within:ring-primary-500">
+                    <input type="file" id="video-upload" name="video" accept="video/*" 
+                           class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                    <div class="flex items-center text-gray-300">
+                      <i class="fas fa-file-video text-primary-400 mr-2"></i>
+                      <span class="text-sm truncate file-name">Select video file...</span>
+                    </div>
+                  </div>
+                </div>
+                <button type="button" onclick="uploadVideo()" class="btn bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-500 hover:to-primary-600 text-white transform hover:scale-105 transition-all duration-200 flex items-center justify-center px-4 py-2">
+                  <i class="fas fa-upload mr-2"></i> Upload
+                </button>
+              </div>
+              
+              <button type="button" class="btn w-full flex items-center justify-center bg-gradient-to-r from-primary-400 to-primary-500 hover:from-primary-300 hover:to-primary-400 text-primary-900 font-medium hover:text-primary-950 transform hover:-translate-y-0.5 transition-all duration-200 shadow-md" id="show-videos-btn" data-modal-target="videoSelectModal">
+                <i class="fas fa-photo-video mr-2"></i> Browse Uploaded Videos
+              </button>
+            </form>
+          </div>
         </div>
       </div>
-      <div class="col-4">
-        <h5>Instructions:</h5>
-        <p>
-          1) Click "Start Mic" to record (compressed .webm).<br>
-          2) Speak. Then click "Stop Mic".<br>
-          3) The recognized text and agent's response can be TTS if you enable it below.
-        </p>
-        <!-- TTS controls -->
-        <div id="ttsControls">
-          <label for="ttsEnable">
-            <input type="checkbox" id="ttsEnable">
-            Enable TTS
-          </label>
-          <br>
-          <label for="ttsApiKey">ElevenLabs API Key:</label>
-          <input type="text" id="ttsApiKey" placeholder="Paste your key here">
+      
+      <!-- Instructions Panel -->
+      <div class="w-full lg:w-1/3 px-3 mb-3 lg:mb-0">
+        <div class="bg-dark-800 rounded-lg p-3 shadow-lg border border-dark-700 panel-container">
+          <div class="flex justify-between items-center mb-2">
+            <h5 class="font-semibold flex items-center m-0">
+              <i class="fas fa-info-circle text-primary-400 mr-2"></i> Instructions
+            </h5>
+            <button type="button" class="btn btn-sm px-2.5 py-1.5 rounded-lg bg-primary-700 text-white hover:bg-primary-600 transition-all duration-200 shadow-sm panel-toggle" data-target="#instructions-collapse" aria-expanded="true">
+              <i class="fas fa-chevron-down"></i>
+            </button>
+          </div>
+          <div id="instructions-collapse" class="panel-content">
+            <div class="rounded-lg bg-dark-900 p-3 border border-primary-900 mb-2">
+              <div class="flex items-start">
+                <div class="w-6 h-6 rounded-full bg-primary-700 flex items-center justify-center text-white text-xs flex-shrink-0 mt-0.5 mr-2">1</div>
+                <div>
+                  <h6 class="font-medium text-white text-sm m-0 mb-1">Start Recording</h6>
+                  <p class="text-gray-300 text-xs m-0">Click <span class="px-1.5 py-0.5 bg-primary-700 rounded text-white"><i class="fas fa-microphone"></i> Start Mic</span></p>
+                </div>
+              </div>
+            </div>
+            
+            <div class="rounded-lg bg-dark-900 p-3 border border-primary-900 mb-2">
+              <div class="flex items-start">
+                <div class="w-6 h-6 rounded-full bg-primary-700 flex items-center justify-center text-white text-xs flex-shrink-0 mt-0.5 mr-2">2</div>
+                <div>
+                  <h6 class="font-medium text-white text-sm m-0 mb-1">Ask Your Question</h6>
+                  <p class="text-gray-300 text-xs m-0">Speak clearly about procedures, tools, or request notes</p>
+                </div>
+              </div>
+            </div>
+            
+            <div class="rounded-lg bg-dark-900 p-3 border border-primary-900">
+              <div class="flex items-start">
+                <div class="w-6 h-6 rounded-full bg-primary-700 flex items-center justify-center text-white text-xs flex-shrink-0 mt-0.5 mr-2">3</div>
+                <div>
+                  <h6 class="font-medium text-white text-sm m-0 mb-1">Stop Recording</h6>
+                  <p class="text-gray-300 text-xs m-0">Click <span class="px-1.5 py-0.5 bg-red-600 rounded text-white"><i class="fas fa-stop-circle"></i> Stop</span> when finished</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- TTS Controls Panel -->
+      <div class="w-full lg:w-1/3 px-3 mb-3 lg:mb-0">
+        <div id="ttsControls" class="bg-dark-800 rounded-lg p-3 shadow-lg border border-dark-700 panel-container">
+          <div class="flex justify-between items-center mb-2">
+            <h5 class="font-semibold flex items-center m-0">
+              <i class="fas fa-volume-up text-primary-400 mr-2"></i> Text-to-Speech
+            </h5>
+            <button type="button" class="btn btn-sm px-2.5 py-1.5 rounded-lg bg-primary-700 text-white hover:bg-primary-600 transition-all duration-200 shadow-sm panel-toggle" data-target="#tts-collapse" aria-expanded="true">
+              <i class="fas fa-chevron-down"></i>
+            </button>
+          </div>
+          <div id="tts-collapse" class="panel-content">
+            <div class="mb-4">
+              <div class="flex items-center text-white">
+                <div class="toggle-switch relative inline-block mr-2 align-middle select-none">
+                  <input type="checkbox" id="ttsEnable" class="sr-only">
+                  <label for="ttsEnable" class="flex items-center cursor-pointer">
+                    <div class="relative">
+                      <div class="block w-10 h-6 rounded-full bg-gray-600"></div>
+                      <div class="dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform"></div>
+                    </div>
+                  </label>
+                </div>
+                <span class="text-sm font-medium ml-1">Enable voice responses</span>
+              </div>
+            </div>
+            
+            <div class="mb-2">
+              <label for="ttsApiKey" class="block mb-2 text-sm font-medium text-gray-300">ElevenLabs API Key:</label>
+              <div class="relative">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <i class="fas fa-key text-primary-500"></i>
+                </div>
+                <input type="text" id="ttsApiKey" placeholder="Default key will be used if empty" 
+                      class="w-full pl-10 p-2 bg-dark-700 border border-primary-700 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 rounded-lg text-sm text-white transition-colors">
+              </div>
+              <p class="mt-1 text-xs text-gray-400">Default key is available, or enter your own ElevenLabs key.</p>
+            </div>
+            
+            <div class="rounded-lg bg-dark-900 p-3 border border-primary-900 mt-4">
+              <div class="flex items-center text-xs text-gray-300">
+                <i class="fas fa-info-circle text-primary-400 mr-2"></i>
+                <p class="m-0">Voice output will read AI responses aloud using the ElevenLabs Text-to-Speech API.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Middle row with video and chat/tabs side by side -->
+    <div class="flex flex-wrap -mx-3">
+      <!-- Video Panel - Left Column -->
+      <div class="w-full lg:w-1/2 px-3 mb-3">
+        <div id="video-container" class="mb-3">
+          <div class="bg-dark-800 rounded-lg overflow-hidden shadow-lg border border-dark-700">
+            <div class="flex justify-between items-center p-2 bg-dark-900 border-b border-dark-700">
+              <div class="flex items-center">
+                <i class="fas fa-film text-primary-400 mr-2"></i>
+                <h5 class="font-semibold m-0">Surgical Video</h5>
+              </div>
+              <div class="flex space-x-2">
+                <button class="btn btn-sm px-3 py-1.5 rounded-lg bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-500 hover:to-primary-600 text-white transition-all duration-200 shadow-sm" id="fullscreen-btn" onclick="toggleFullscreen()">
+                  <i class="fas fa-expand"></i>
+                </button>
+                <button class="btn btn-sm px-3 py-1.5 rounded-lg bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-500 hover:to-primary-600 text-white transition-all duration-200 shadow-sm" id="capture-frame-btn" onclick="captureAndStoreFrame()">
+                  <i class="fas fa-camera mr-1.5"></i> Capture
+                </button>
+              </div>
+            </div>
+            <video id="surgery-video" class="w-full" style="max-height: 55vh;" controls autoplay>
+              <source src="{{ video_src|default('/static/sample_video.mp4') }}" type="video/mp4">
+              Your browser does not support the video tag.
+            </video>
+            <div class="p-2 bg-dark-800 flex justify-between">
+              <span class="badge bg-dark-600 text-gray-200 flex items-center rounded-full px-3 py-1">
+                <i class="fas fa-clock mr-1.5"></i> <span id="video-current-time">0:00</span> / <span id="video-duration">0:00</span>
+              </span>
+              <div>
+                <span class="badge bg-dark-600 text-gray-200 flex items-center rounded-full px-3 py-1">
+                  <i class="fas fa-tag mr-1.5"></i> <span id="current-phase">Undefined</span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Chat/Annotations/Notes/Summary Tabs - Right Column -->
+      <div class="w-full lg:w-1/2 px-3 mb-3">
+        <!-- Tabs for chat, annotations, and notes -->
+        <div class="bg-dark-800 rounded-lg overflow-hidden shadow-lg border border-dark-700 mb-3">
+          <ul class="flex border-b border-dark-700 bg-dark-900" id="mainTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active text-white px-4 py-2 border-b-2 border-primary-500" id="chat-tab" role="tab" data-tab-target="chat-tab-content">
+                <i class="fas fa-comment-alt mr-1"></i> Chat
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link text-white px-4 py-2 hover:bg-dark-800" id="annotations-tab" role="tab" data-tab-target="annotations-tab-content">
+                <i class="fas fa-tag mr-1"></i> Annotations <span class="inline-flex items-center justify-center rounded-full bg-primary-400 text-xs font-medium text-white px-2 h-5 ml-1 annotation-count">0</span>
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link text-white px-4 py-2 hover:bg-dark-800" id="notes-tab" role="tab" data-tab-target="notes-tab-content">
+                <i class="fas fa-sticky-note mr-1"></i> Notes <span class="inline-flex items-center justify-center rounded-full bg-primary-400 text-xs font-medium text-white px-2 h-5 ml-1 notes-count">0</span>
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link text-white px-4 py-2 hover:bg-dark-800" id="summary-tab" role="tab" data-tab-target="summary-tab-content">
+                <i class="fas fa-file-medical-alt mr-1"></i> Summary
+              </button>
+            </li>
+          </ul>
+          
+          <div class="tab-content">
+            <!-- Chat Tab Content -->
+            <div class="tab-pane active" id="chat-tab-content" role="tabpanel" style="display: block;">
+              <div class="flex flex-col" style="height: 65vh; max-height: 600px;">
+                <!-- Chat header -->
+                <div class="p-3 bg-dark-900 border-b border-dark-700 flex justify-between items-center">
+                  <div class="flex items-center">
+                    <i class="fas fa-comment-dots text-primary-400 mr-2"></i>
+                    <h5 class="font-semibold m-0">Conversation</h5>
+                  </div>
+                  <button class="btn btn-sm px-3 py-1.5 rounded-lg bg-dark-600 text-white hover:bg-dark-500 transition-all duration-200 shadow-sm" onclick="onChatHistoryReset()">
+                    <i class="fas fa-trash-alt mr-1.5"></i> Clear
+                  </button>
+                </div>
+                
+                <!-- Chat messages area -->
+                <div id="chat-history-container" class="scroll-smooth flex-1 overflow-auto px-3 py-3">
+                  <!-- Welcome message -->
+                  <div class="agent-message welcome-message">
+                    <div class="flex items-center justify-between mb-0 -mt-1 -mx-1">
+                      <span class="flex items-center">
+                        <span class="avatar-icon bg-success-600">
+                          <i class="fas fa-robot"></i>
+                        </span>
+                        <span class="text-[11px] text-success-300/90">AI Assistant</span>
+                      </span>
+                      <span class="text-[10px] text-gray-400/80" id="welcome-time"></span>
+                    </div>
+                    <div class="message-content">
+                      <p class="mb-1.5">Welcome to the Surgical Agentic Framework Demo! I can help with procedure analysis, tool identification, answering questions, and creating notes.</p>
+                      <p class="mb-0 text-gray-300 text-xs mt-2"><i class="fas fa-lightbulb text-yellow-400 mr-1"></i> Try: "What tools are being used?" • "Take a note about bleeding" • "What phase are we in?"</p>
+                    </div>
+                  </div>
+                  </div>
+                </div>
+                
+                <!-- Chat input area -->
+                <div class="p-3 bg-dark-800 border-t border-dark-700">
+                  <div class="relative">
+                    <div class="flex mb-2">
+                      <div class="flex-grow relative">
+                        <textarea id="chat-message-input" 
+                               class="w-full p-3 pr-10 bg-dark-700 border border-dark-600 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 rounded-lg text-white resize-none min-h-[2.75rem] max-h-32 overflow-hidden shadow-inner"
+                               placeholder="Type a message..." onkeydown="onChatMessageKey(event)" rows="1"></textarea>
+                        <button class="absolute right-2 top-1/2 transform -translate-y-1/2 p-2 bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-500 hover:to-primary-600 text-white rounded-full flex items-center justify-center hover:scale-110 hover:rotate-6 transition-all duration-200 shadow-sm" 
+                              onclick="onChatMessageSubmit()" title="Send message">
+                          <i class="fas fa-paper-plane"></i>
+                        </button>
+                      </div>
+                      
+                      <button class="btn ml-2 h-[44px] px-3 flex-shrink-0 rounded-lg shadow-sm flex items-center justify-center bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-500 hover:to-primary-600 text-white transform hover:scale-105 transition-all duration-200 opacity-50 cursor-not-allowed" id="mic-btn" onclick="toggleMic()" disabled>
+                        <i class="fas fa-microphone mr-1.5"></i> <span>Start Mic</span>
+                      </button>
+                    </div>
+                    
+                    <div class="flex items-center text-[10px] text-gray-500 pl-1">
+                      <i class="fas fa-info-circle mr-1"></i>
+                      <span>Press Enter to send, Shift+Enter for new line</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Annotations Tab Content -->
+            <div class="tab-pane" id="annotations-tab-content" role="tabpanel" style="display: none;">
+              <div class="flex flex-col" style="height: 65vh; max-height: 600px;">
+                <!-- Annotations header -->
+                <div class="p-3 bg-dark-900 border-b border-dark-700 flex justify-between items-center">
+                  <div class="flex items-center">
+                    <i class="fas fa-tag text-primary-400 mr-2"></i>
+                    <h5 class="font-semibold m-0">Annotations</h5>
+                  </div>
+                </div>
+                
+                <div id="annotations-container" class="flex-1 overflow-auto p-3 bg-dark-900">
+                  <div class="annotation-content">
+                    <div class="text-center text-gray-400 p-5">
+                      <i class="fas fa-tag fa-3x mb-3"></i>
+                      <p>No annotations available yet. Annotations will appear here as they are generated.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Notes Tab Content -->
+            <div class="tab-pane" id="notes-tab-content" role="tabpanel" style="display: none;">
+              <div class="flex flex-col" style="height: 65vh; max-height: 600px;">
+                <!-- Notes header -->
+                <div class="p-3 bg-dark-900 border-b border-dark-700 flex justify-between items-center">
+                  <div class="flex items-center">
+                    <i class="fas fa-sticky-note text-primary-400 mr-2"></i>
+                    <h5 class="font-semibold m-0">Notes</h5>
+                  </div>
+                  <div class="flex items-center">
+                    <button class="btn btn-sm px-3 py-1.5 rounded-lg bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-400 hover:to-primary-500 text-white transform hover:-translate-y-0.5 transition-all duration-200 shadow-md" id="add-note-btn" data-modal-target="addNoteModal">
+                      <i class="fas fa-plus mr-2"></i> Add Note
+                    </button>
+                  </div>
+                </div>
+                
+                <div id="notes-container" class="flex-1 overflow-auto p-3 bg-dark-900">
+                  <div class="text-center text-gray-400 p-5">
+                    <i class="fas fa-sticky-note fa-3x mb-3"></i>
+                    <p>No notes available yet. You can add notes manually or ask the assistant to take notes for you.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Summary Tab Content -->
+            <div class="tab-pane" id="summary-tab-content" role="tabpanel" style="display: none;">
+              <div class="flex flex-col" style="height: 65vh; max-height: 600px;">
+                <!-- Summary header -->
+                <div class="p-3 bg-dark-900 border-b border-dark-700 flex justify-between items-center">
+                  <div class="flex items-center">
+                    <i class="fas fa-file-medical-alt text-primary-400 mr-2"></i>
+                    <h5 class="font-semibold m-0">Procedure Summary</h5>
+                  </div>
+                  <div class="flex items-center">
+                    <button class="btn px-4 py-2 rounded-lg bg-gradient-to-r from-green-500 to-green-600 hover:from-green-400 hover:to-green-500 text-white transform hover:scale-105 transition-all duration-200 shadow-md" id="generate-summary-btn" onclick="generateSummary()">
+                      <i class="fas fa-sync-alt mr-2"></i> Generate Summary
+                    </button>
+                  </div>
+                </div>
+                
+                <div id="summary-container" class="flex-1 overflow-auto p-3 bg-dark-900">
+                  <div class="text-center text-gray-400 p-5">
+                    <i class="fas fa-file-medical-alt fa-3x mb-3"></i>
+                    <p>No summary available yet. Click "Generate" to create a summary of the procedure.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Video selection modal -->
+    <div class="modal fade hidden fixed inset-0 z-50 overflow-auto flex items-center justify-center" id="videoSelectModal" tabindex="-1">
+      <div class="fixed inset-0 bg-black bg-opacity-75 transition-opacity"></div>
+      <div class="relative z-10 w-full max-w-4xl m-auto px-4 py-6">
+        <div class="modal-dialog bg-dark-900 text-white border border-dark-700 rounded-lg shadow-xl w-full transform transition-all">
+          <div class="modal-header border-b border-dark-700 bg-dark-800 rounded-t-lg p-4 flex justify-between items-center">
+            <h5 class="modal-title flex items-center text-xl font-semibold" id="videoSelectModalLabel">
+              <i class="fas fa-film text-primary-400 mr-3"></i> Browse Videos
+            </h5>
+            <button type="button" class="text-gray-400 hover:text-white text-xl hover:bg-dark-700 p-1.5 rounded-full transition-colors flex items-center justify-center w-8 h-8" data-close-modal>
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          <div class="modal-body p-5">
+            <div class="mb-4">
+              <div class="relative">
+                <input type="text" id="video-search" class="w-full pl-10 p-3 bg-dark-800 border border-dark-600 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 rounded-lg text-white transition-colors" 
+                       placeholder="Search videos by name...">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <i class="fas fa-search text-primary-400"></i>
+                </div>
+              </div>
+              <div class="flex items-center justify-between mt-4 mb-3">
+                <h6 class="text-gray-300 font-medium">Available Videos</h6>
+                <button type="button" class="btn btn-sm px-3 py-1.5 rounded-lg bg-dark-700 hover:bg-dark-600 text-gray-300 flex items-center justify-center transition-all duration-200 shadow-sm" id="refresh-videos-btn">
+                  <i class="fas fa-sync-alt mr-1.5"></i> Refresh
+                </button>
+              </div>
+            </div>
+            <div id="video-list" class="list-group space-y-2 max-h-[50vh] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-dark-500 scrollbar-track-dark-800">
+              <!-- Videos will be populated here via JavaScript -->
+              <div class="text-center p-6" id="video-loading">
+                <div class="animate-spin rounded-full h-14 w-14 border-4 border-t-primary-400 border-dark-600 mb-4 mx-auto"></div>
+                <p class="text-white text-lg">Loading videos...</p>
+              </div>
+              <div class="text-center p-8 hidden" id="no-videos">
+                <div class="bg-dark-800 rounded-xl p-6 border border-dark-600">
+                  <i class="fas fa-video-slash text-6xl mb-4 text-gray-500"></i>
+                  <p class="text-gray-300 text-lg">No videos found</p>
+                  <p class="text-gray-400 text-sm mt-2">Upload a video to get started</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer border-t border-dark-700 p-4 flex justify-end space-x-3">
+            <button type="button" class="btn px-5 py-2 rounded-lg bg-dark-600 text-white hover:bg-dark-500 transition-all duration-200 shadow-sm" data-close-modal>
+              <i class="fas fa-times mr-2"></i> Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  <!-- Add Note Modal -->
+  <div class="modal fade hidden fixed inset-0 z-50 overflow-auto flex items-center justify-center" id="addNoteModal" tabindex="-1">
+    <div class="fixed inset-0 bg-black bg-opacity-75 transition-opacity"></div>
+    <div class="relative z-10 w-full max-w-lg m-auto px-4 py-6">
+      <div class="modal-dialog bg-dark-900 text-white border border-dark-700 rounded-lg shadow-xl w-full transform transition-all">
+        <div class="modal-header border-b border-dark-700 bg-dark-800 rounded-t-lg p-4 flex justify-between items-center">
+          <h5 class="modal-title flex items-center text-lg font-semibold" id="addNoteModalLabel">
+            <i class="fas fa-sticky-note text-primary-400 mr-2"></i> Add Note
+          </h5>
+          <button type="button" class="text-gray-400 hover:text-white text-xl hover:bg-dark-700 p-1.5 rounded-full transition-colors flex items-center justify-center w-8 h-8" data-close-modal>
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="modal-body p-4">
+          <div class="mb-3">
+            <label for="note-title" class="block mb-2 text-sm font-medium">Title</label>
+            <input type="text" class="form-control bg-dark-700 border-dark-600 text-white" id="note-title" placeholder="Note title">
+          </div>
+          <div class="mb-3">
+            <label for="note-content" class="block mb-2 text-sm font-medium">Content</label>
+            <textarea class="form-control bg-dark-700 border-dark-600 text-white" id="note-content" rows="4" placeholder="Note content"></textarea>
+          </div>
+          <div class="mb-3">
+            <label for="note-message" class="block mb-2 text-sm font-medium">Message to Assistant (optional)</label>
+            <textarea class="form-control bg-dark-700 border-dark-600 text-white" id="note-message" rows="2" placeholder="Add a message to send to the AI assistant"></textarea>
+            <small class="text-gray-400">This message will be sent to the assistant after the note is saved.</small>
+          </div>
+          <div class="mb-3">
+            <label class="block mb-2 text-sm font-medium">Attach Image</label>
+            <div class="flex gap-2">
+              <button class="btn rounded-lg bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-500 hover:to-primary-600 text-white transition-all duration-200 shadow-sm" id="capture-for-note-btn" onclick="captureForNote()">
+                <i class="fas fa-camera mr-1"></i> Capture
+              </button>
+              <input type="file" class="form-control bg-dark-700 border-dark-600 text-white" id="note-image" accept="image/*">
+            </div>
+            <div class="mt-2 hidden" id="note-image-preview-container">
+              <img id="note-image-preview" class="w-full rounded border border-dark-600" src="">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer border-t border-dark-700">
+          <button type="button" class="btn rounded-lg bg-dark-600 text-white hover:bg-dark-500 transition-all duration-200 shadow-sm" data-close-modal>
+            <i class="fas fa-times mr-1"></i> Cancel
+          </button>
+          <button type="button" class="btn rounded-lg bg-gradient-to-r from-green-500 to-green-600 hover:from-green-400 hover:to-green-500 text-white transform hover:scale-105 transition-all duration-200 shadow-md" id="save-note-btn" onclick="saveManualNote()">
+            <i class="fas fa-save mr-1"></i> Save Note
+          </button>
         </div>
       </div>
     </div>
   </div>
-
-  <!-- Modal -->
-  <div class="modal fade" id="audioDialog" tabindex="-1" aria-labelledby="audioDialogLabel" aria-hidden="true">
-    <div class="modal-dialog">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title" id="audioDialogLabel">Audio Settings</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" style="color: #eeeeee;"></button>
+  
+  <!-- Image Viewer Modal -->
+  <div class="modal fade hidden fixed inset-0 z-50 overflow-auto flex items-center justify-center" id="imageViewerModal" tabindex="-1">
+    <div class="fixed inset-0 bg-black bg-opacity-75 transition-opacity"></div>
+    <div class="relative z-10 w-full max-w-4xl m-auto px-4 py-6">
+      <div class="modal-dialog bg-dark-900 text-white border border-dark-700 rounded-lg shadow-xl w-full transform transition-all">
+        <div class="modal-header border-b border-dark-700 bg-dark-800 rounded-t-lg p-4 flex justify-between items-center">
+          <h5 class="modal-title flex items-center text-lg font-semibold" id="imageViewerModalLabel">
+            <i class="fas fa-image text-primary-400 mr-2"></i> <span id="image-title">Image Viewer</span>
+          </h5>
+          <button type="button" class="text-gray-400 hover:text-white text-xl hover:bg-dark-700 p-1.5 rounded-full transition-colors flex items-center justify-center w-8 h-8" data-close-modal>
+            <i class="fas fa-times"></i>
+          </button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body p-0">
+          <img id="modal-image" class="w-full" src="">
+          <div class="p-3 bg-dark-800">
+            <div class="flex justify-between items-center mb-2">
+              <span class="text-gray-300" id="image-timestamp"></span>
+              <span class="badge bg-dark-600" id="image-type"></span>
+            </div>
+            <p id="image-description" class="mb-0"></p>
+          </div>
+        </div>
+        <div class="modal-footer border-t border-dark-700">
+          <button type="button" class="btn rounded-lg bg-dark-600 text-white hover:bg-dark-500 transition-all duration-200 shadow-sm" data-close-modal>
+            <i class="fas fa-times mr-1"></i> Close
+          </button>
+          <button type="button" class="btn rounded-lg bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-500 hover:to-primary-600 text-white transition-all duration-200 shadow-md" id="download-image-btn">
+            <i class="fas fa-download mr-1"></i> Download
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Audio Settings Modal -->
+  <div class="modal fade hidden fixed inset-0 z-50 overflow-auto flex items-center justify-center" id="audioDialog" tabindex="-1">
+    <div class="fixed inset-0 bg-black bg-opacity-75 transition-opacity"></div>
+    <div class="relative z-10 w-full max-w-lg m-auto px-4 py-6">
+      <div class="modal-dialog bg-dark-900 text-white border border-dark-700 rounded-lg shadow-xl w-full transform transition-all">
+        <div class="modal-header border-b border-dark-700 bg-dark-800 rounded-t-lg p-4 flex justify-between items-center">
+          <h5 class="modal-title flex items-center text-lg font-semibold">
+            <i class="fas fa-sliders-h text-primary-400 mr-2"></i> Audio Settings
+          </h5>
+          <button type="button" class="text-gray-400 hover:text-white text-xl hover:bg-dark-700 p-1.5 rounded-full transition-colors flex items-center justify-center w-8 h-8" data-close-modal>
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="modal-body p-4">
           <p>No custom settings yet.</p>
         </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Done</button>
+        <div class="modal-footer border-t border-dark-700 p-3">
+          <button type="button" class="btn px-5 py-2 rounded-lg bg-dark-600 text-white hover:bg-dark-500 transition-all duration-200 shadow-sm" data-close-modal>Done</button>
         </div>
       </div>
     </div>
   </div>
+
+  <!-- Custom JavaScript -->
+  <script src="/static/main.js"></script>
 </body>
 </html>

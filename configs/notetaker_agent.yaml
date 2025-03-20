@@ -16,5 +16,5 @@ logging: true
 timestamp_format: "%Y-%m-%d %H:%M:%S"
 max_notes: 500
 
-model_name: "models/Llama-3.2-11B-lora-surgical-4bit/"
+model_name: "models/llm/Llama-3.2-11B-lora-surgical-4bit/"
 llm_url: "http://127.0.0.1:8000/v1"

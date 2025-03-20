@@ -1,3 +1,4 @@
+#!/bin/bash
 # Copyright (c) MONAI Consortium
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -9,4 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-python -m vllm.entrypoints.openai.api_server     --model "models/Llama-3.2-11B-lora-surgical-4bit/"     --port "8000"     --enforce-eager     --max-model-len "4096"     --max-num-seqs "8"     --disable-mm-preprocessor-cache     --load-format "bitsandbytes"     --quantization "bitsandbytes" 
+python -m vllm.entrypoints.openai.api_server \
+    --model "models/llm/Llama-3.2-11B-lora-surgical-4bit/" \
+    --port "8000" \
+    --enforce-eager \
+    --max-model-len "4096" \
+    --max-num-seqs "8" \
+    --disable-mm-preprocessor-cache \
+    --load-format "bitsandbytes" \
+    --quantization "bitsandbytes"

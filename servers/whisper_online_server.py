@@ -1,4 +1,4 @@
-"""
+#!/usr/bin/env python3
 # Copyright (c) MONAI Consortium
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -9,7 +9,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" 
 
 import sys
 import argparse
@@ -22,11 +21,23 @@ import subprocess
 import time
 import math
 
+# Add project root to path to ensure imports work
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import soundfile
 import librosa
 
+# If you plan to use OpenAI API or faster-whisper,
+# be sure to install them, e.g.:
+#   pip install openai
+#   pip install faster-whisper
+# Otherwise, remove/comment out the relevant code below.
 
 logger = logging.getLogger(__name__)
+
+###############################################################################
+# BEGIN: Inline "whisper_online.py" essentials
+###############################################################################
 
 from functools import lru_cache
 

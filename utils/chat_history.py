@@ -1,4 +1,3 @@
-"""
 # Copyright (c) MONAI Consortium
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -9,8 +8,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" 
-
 
 class ChatHistory:
     def __init__(self):
@@ -39,6 +36,13 @@ class ChatHistory:
 
     def reset(self):
         self.history = []
+        
+    def has_message(self, message):
+        """Check if a message already exists in the chat history"""
+        for user_msg, _ in self.history:
+            if user_msg == message:
+                return True
+        return False
 
     def update_chat_history(self, is_done, agent_response, prompt_complete, asr_text):
         if prompt_complete:

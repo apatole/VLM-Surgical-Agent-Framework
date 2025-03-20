@@ -1,4 +1,3 @@
-"""
 # Copyright (c) MONAI Consortium
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -9,7 +8,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" 
 
 import json
 import logging
@@ -66,9 +64,14 @@ class ChatAgent(Agent):
 
     def generate_user_prompt(self, text, tool_labels):
         user_prompt_template = self.agent_settings.get('user_prompt', '')
-        # tool_str = self._get_tool_str(tool_labels)  # remove
-        # or tool_str = ""
+        
+        # Make tool-related queries more explicit to ensure the model understands
+        if "tool" in text.lower() or "instrument" in text.lower():
+            # Add explicit instruction to ensure model knows to look at the image
+            text = f"{text} (refer to the surgical image attached to this message)"
+        
         user_prompt_filled = user_prompt_template.replace("{tool_labels}", "").replace("{text}", text)
+        self._logger.debug(f"Generated user prompt: {user_prompt_filled}")
         return user_prompt_filled
 
 
