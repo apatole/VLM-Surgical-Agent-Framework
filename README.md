@@ -256,7 +256,6 @@ surgical_agentic_framework/
 │       └── index.html
 ├── annotations/            <-- Stored procedure annotations
 ├── uploaded_videos/        <-- Uploaded video storage
-├── CLAUDE.md               <-- Guidelines for Claude or other AI assistants
 ├── README.md               <-- This file
 ├── package.json            <-- Node.js dependencies and scripts
 ├── postcss.config.js       <-- PostCSS configuration for Tailwind
