@@ -263,12 +263,3 @@ surgical_agentic_framework/
 ├── vite.config.js          <-- Vite build configuration
 └── requirements.txt        <-- Python dependencies
 ```
-
-## Recent Updates
-
-* Added robust WebSocket connection handling with automatic reconnection
-* Improved video upload and management functionality
-* Enhanced post-operation note generation interface
-* Modernized UI with Vue.js components
-* Added tailored CSS styling with Tailwind
-* Implemented development scripts for faster iteration
