@@ -17,7 +17,7 @@ rm -rf vllm
 docker run -it --rm \
   --net host \
   --gpus all \
-  -v $HOME/checkpoints/lora_applied_multinode_4e_v3-4bit:/vllm-workspace/models/llm/Llama-3.2-11B-lora-surgical-4bit \
+  -v $HOME/nvidia/VLM-Surgical-Agent-Framework/models/llm:/vllm-workspace/models \
   gitlab-master.nvidia.com:5005/holoscan/copilot-blueprint:vllm-openai-v0.8.3-dgpu-a6000 \
   --model models/llm/Llama-3.2-11B-lora-surgical-4bit \
   --enforce-eager \
