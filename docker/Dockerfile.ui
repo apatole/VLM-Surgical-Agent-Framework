@@ -1,0 +1,37 @@
+# from a node js image
+FROM nvcr.io/nvidia/pytorch:25.03-py3
+
+COPY package.json .
+COPY package-lock.json .
+COPY postcss.config.js .
+COPY tailwind.config.js .
+COPY vite.config.js .
+COPY web web
+
+RUN apt-get update && apt-get install -y curl gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* \
+    && npm install \
+    && npm run build:tailwind
+
+RUN pip install tiktoken \
+    uvicorn \
+    websockets \
+    flask \
+    fastapi \
+    starlette \
+    sse_starlette \
+    starlette_context \
+    elevenlabs \
+    openai
+
+# Copy the app
+COPY servers servers
+COPY configs configs
+COPY agents agents
+COPY utils utils
+
+EXPOSE 8050
+
+CMD ["python", "servers/app.py"]
