@@ -1,0 +1,44 @@
+version: '3'
+
+services:
+  vllm:
+    image: gitlab-master.nvidia.com:5005/holoscan/copilot-blueprint:vllm-openai-v0.8.3-dgpu-a6000
+    command: >
+      --model models/llm/Llama-3.2-11B-lora-surgical-4bit
+      --enforce-eager
+      --max-model-len 4096
+      --max-num-seqs 8
+      --disable-mm-preprocessor-cache
+      --load-format bitsandbytes
+      --quantization bitsandbytes
+    volumes:
+      - $HOME/nvidia/VLM-Surgical-Agent-Framework/models:/vllm-workspace/models
+    network_mode: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+
+  whisper:
+    image: gitlab-master.nvidia.com:5005/holoscan/copilot-blueprint:whisper-dgpu
+    command: --model_cache_dir /root/whisper
+    volumes:
+      - $HOME/nvidia/VLM-Surgical-Agent-Framework/models/whisper:/root/whisper
+    network_mode: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+
+  ui:
+    image: gitlab-master.nvidia.com:5005/holoscan/copilot-blueprint:ui
+    network_mode: host
+    depends_on:
+      - vllm
+      - whisper
