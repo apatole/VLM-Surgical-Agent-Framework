@@ -492,9 +492,13 @@ class Webserver(threading.Thread):
                 
                 # Create a temporary folder for this data
                 import datetime
-                import tempfile
-                temp_dir = tempfile.mkdtemp(prefix="temp_procedure_")
-                
+                annotations_dir = os.getenv("ANNOTATIONS_DIR", "/app/annotations")
+                # Use datetime as the folder name
+                temp_dir = os.path.join(
+                    annotations_dir,
+                    "procedure_" + datetime.datetime.now().strftime("%Y_%m_%d__%H_%M_%S")
+                )
+                os.makedirs(temp_dir, exist_ok=True)
                 # Save the annotation data
                 annotation_json = os.path.join(temp_dir, "annotation.json")
                 with open(annotation_json, 'w') as f:

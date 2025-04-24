@@ -1,6 +1,8 @@
 # from a node js image
 FROM nvcr.io/nvidia/pytorch:25.03-py3
 
+WORKDIR /app
+
 COPY package.json .
 COPY package-lock.json .
 COPY postcss.config.js .
@@ -27,7 +29,8 @@ RUN pip install tiktoken \
     openai
 
 # Copy the app
-COPY servers servers
+COPY servers/app.py servers/app.py
+COPY servers/web_server.py servers/web_server.py
 COPY configs configs
 COPY agents agents
 COPY utils utils
