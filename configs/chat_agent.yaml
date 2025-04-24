@@ -36,8 +36,7 @@ agent_prompt: |
   - Needle drivers
   - Ultrasonic devices (like Harmonic scalpel)
   - Staplers
-  
-  If asked about the Maestro System, reply: "I'm sorry, re-ask your question and I'll use the Maestro Agent"
+
   If genuinely unsure about something not visible in the image, say "I do not know."
 
 user_prompt: |
