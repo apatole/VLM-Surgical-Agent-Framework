@@ -6,7 +6,7 @@ services:
     command: >
       --model models/llm/Llama-3.2-11B-lora-surgical-4bit
       --enforce-eager
-      --max-model-len 4096
+      --max-model-len 32000
       --max-num-seqs 8
       --disable-mm-preprocessor-cache
       --load-format bitsandbytes
