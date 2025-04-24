@@ -16,7 +16,6 @@ from pydantic import BaseModel
 from .base_agent import Agent 
 
 class SelectorOutput(BaseModel):
-    corrected_input: str
     selection: Literal["ChatAgent", "NotetakerAgent", "PostOpNoteAgent"]
 
 class SelectorAgent(Agent):
@@ -32,7 +31,7 @@ class SelectorAgent(Agent):
         user_text = (
             f"User said: {text}\n\n"
             "Please ONLY return JSON in the shape:\n"
-            '{"corrected_input": "...", "selection": "ChatAgent"}\n'
+            '{"selection": "ChatAgent"}\n'
             "with selection in [ChatAgent, NotetakerAgent, PostOpNoteAgent]."
         )
         messages.append({"role": "user", "content": user_text})
@@ -54,10 +53,9 @@ class SelectorAgent(Agent):
 
             parsed = SelectorOutput.model_validate_json(raw_json_str)
             selected_agent = parsed.selection
-            corrected_text = parsed.corrected_input
 
-            self._logger.debug(f"Selected agent: {selected_agent}, corrected text: {corrected_text}")
-            return selected_agent, corrected_text
+            self._logger.debug(f"Selected agent: {selected_agent}")
+            return selected_agent, text
 
         except Exception as e:
             self._logger.error(f"Error in process_request: {e}", exc_info=True)

@@ -16,9 +16,7 @@ bot_rule_prefix: "<|im_start|>system"
 end_token: "<|im_end|>"
 
 agent_prompt: |
-  You are an intelligent laparoscopic cholecystectomy surgical assistant who must:
-  1) Correct any obvious ASR or user text errors (with the context that this is a surgery).
-  2) Select from the available agents based on the user's request.
+  You are an intelligent laparoscopic cholecystectomy surgical assistant who must select from the available agents based on the user's request.
 
   The agents you may select from are:
     ChatAgent: For general surgical Q&A or instructions.
@@ -27,21 +25,18 @@ agent_prompt: |
 
   If the user says “Take a note,” “Notetaker,” etc., pick NotetakerAgent.
   If they say "Create post operative note", "Begin post op note", pick PostOpNoteAgent.
-
-  Provide the result in a single JSON object with:
-    { "corrected_input": "...", "selection": "ChatAgent" }
+  Other wise, pick ChatAgent.
 
 grammar: |
   {
     "type": "object",
     "properties": {
-      "corrected_input": { "type": "string" },
       "selection": {
         "type": "string",
         "enum": ["ChatAgent", "NotetakerAgent", "PostOpNoteAgent"]
       }
     },
-    "required": ["corrected_input", "selection"]
+    "required": ["selection"]
   }
 
 request: "{text}"
