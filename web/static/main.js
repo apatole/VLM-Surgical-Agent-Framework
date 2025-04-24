@@ -1,3 +1,11 @@
+// Add this at the beginning of the script or in the DOMContentLoaded event listener
+const sessionId = generateUniqueId();
+
+// Function to generate a unique ID
+function generateUniqueId() {
+  return 'session-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+}
+
 // Panel Collapsible Functionality
 document.addEventListener('DOMContentLoaded', function() {
   // Initialize save note button
@@ -308,11 +316,21 @@ document.addEventListener('DOMContentLoaded', function() {
 function handleServerMessage(message) {
   console.log("Received message from server:", message);
   
+  // Check if this message is for another session
+  if (message.session_id && message.session_id !== sessionId && 
+      message.recognized_text && message.asr_final) {
+    console.log("Ignoring ASR message from different session:", message.session_id);
+    return; // Skip processing this message as it's for another session
+  }
+  
   // Handle recognized text from audio
   if (message.recognized_text && message.asr_final) {
     addMessageToChat(message.recognized_text, 'user');
-    // Send the message to be processed
-    sendMessageToBackend(message.recognized_text);
+    // Add the message to the frontend
+    const chatInput = document.getElementById('chat-message-input');
+    if (chatInput) {
+      chatInput.value = message.recognized_text;
+    }
   }
   
   // Handle AI responses
@@ -949,10 +967,11 @@ function onChatMessageSubmit() {
 // Function to send a message to the backend with a video frame
 function sendMessageToBackend(message) {
   try {
-    // Prepare payload with message
+    // Prepare payload with message and session ID
     const payload = {
       user_input: message,
-      original_user_input: message // Store original message for note processing
+      original_user_input: message, // Store original message for note processing
+      session_id: sessionId // Add session ID to track messages
     };
     
     // First try to get a new frame by capturing the current video
@@ -1444,7 +1463,8 @@ function startRecording() {
     }
     
     if (typeof startAudio === 'function') {
-      startAudio();
+      // Pass session ID to the audio module
+      startAudio(sessionId);
       showToast('Recording started', 'info');
     } else {
       console.error('startAudio function not found!');
