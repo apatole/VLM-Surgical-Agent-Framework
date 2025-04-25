@@ -78,6 +78,7 @@ class NotetakerAgent(Agent):
 
         response = (
             f"Note recorded (timestamp={timestamp_str}). "
+            f"\n\n{user_text}\n\n"
             f"Total notes so far: {len(self.notes)}."
         )
         return {

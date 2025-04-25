@@ -2,7 +2,7 @@ version: '3'
 
 services:
   vllm:
-    image: gitlab-master.nvidia.com:5005/holoscan/copilot-blueprint:vllm-openai-v0.8.3-dgpu-a6000
+    image: gitlab-master.nvidia.com:5005/holoscan/copilot-blueprint:vllm-openai-v0.8.3-dgpu
     command: >
       --model models/llm/Llama-3.2-11B-lora-surgical-4bit
       --enforce-eager
