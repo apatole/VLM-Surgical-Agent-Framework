@@ -21,7 +21,7 @@ DOCKER_BUILDKIT=1 docker build . \
   --file docker/Dockerfile \
   --target vllm-openai \
   --platform "linux/arm64" \
-  -t gitlab-master.nvidia.com:5005/holoscan/copilot-blueprint:vllm-openai-v0.8.3-dgpu-a6000 \
+  -t vlm-surgical-agents:vllm-openai-v0.8.3-dgpu-a6000 \
   --build-arg RUN_WHEEL_CHECK=false
 rm -rf vllm
 ```
@@ -32,7 +32,7 @@ rm -rf vllm
 ```bash
 docker run -it --rm --net host --gpus all \
   -v $HOME/nvidia/VLM-Surgical-Agent-Framework/models:/vllm-workspace/models \
-  gitlab-master.nvidia.com:5005/holoscan/copilot-blueprint:vllm-openai-v0.8.3-dgpu-a6000 \
+  vlm-surgical-agents:vllm-openai-v0.8.3-dgpu-a6000 \
   --model models/llm/Llama-3.2-11B-lora-surgical-4bit \
   --enforce-eager \
   --max-model-len 4096 \
@@ -47,7 +47,7 @@ docker run -it --rm --net host --gpus all \
 - Build
 ```bash
 docker build \
-  -t gitlab-master.nvidia.com:5005/holoscan/copilot-blueprint:whisper-dgpu \
+  -t vlm-surgical-agents:whisper-dgpu \
   -f docker/Dockerfile.whisper .
 ```
 
@@ -55,7 +55,7 @@ docker build \
 ```bash
 docker run -it --rm --gpus all --net host \
   -v $HOME/nvidia/VLM-Surgical-Agent-Framework/models/whisper:/root/whisper \
-  gitlab-master.nvidia.com:5005/holoscan/copilot-blueprint:whisper-dgpu \
+  vlm-surgical-agents:whisper-dgpu \
   --model_cache_dir /root/whisper
 ```
 
@@ -64,12 +64,12 @@ docker run -it --rm --gpus all --net host \
 
 - Build
 ```bash
-docker build -t gitlab-master.nvidia.com:5005/holoscan/copilot-blueprint:ui -f docker/Dockerfile.ui .
+docker build -t vlm-surgical-agents:ui -f docker/Dockerfile.ui .
 ```
 
 - Run
 ```bash
-docker run -it --rm --net host gitlab-master.nvidia.com:5005/holoscan/copilot-blueprint:ui
+docker run -it --rm --net host vlm-surgical-agents:ui
 ```
 
 

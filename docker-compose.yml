@@ -2,7 +2,7 @@ version: '3'
 
 services:
   vllm:
-    image: gitlab-master.nvidia.com:5005/holoscan/copilot-blueprint:vllm-openai-v0.8.3-dgpu
+    image: vlm-surgical-agents:vllm-openai-v0.8.3-dgpu
     command: >
       --model models/llm/Llama-3.2-11B-lora-surgical-4bit
       --enforce-eager
@@ -12,7 +12,7 @@ services:
       --load-format bitsandbytes
       --quantization bitsandbytes
     volumes:
-      - $HOME/nvidia/VLM-Surgical-Agent-Framework/models:/vllm-workspace/models
+      - ./models:/vllm-workspace/models
     network_mode: host
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/v1/models"]
@@ -29,10 +29,10 @@ services:
               capabilities: [gpu]
 
   whisper:
-    image: gitlab-master.nvidia.com:5005/holoscan/copilot-blueprint:whisper-dgpu
+    image: vlm-surgical-agents:whisper-dgpu
     command: --model_cache_dir /root/whisper
     volumes:
-      - $HOME/nvidia/VLM-Surgical-Agent-Framework/models/whisper:/root/whisper
+      - ./models/whisper:/root/whisper
     network_mode: host
     deploy:
       resources:
@@ -46,10 +46,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.ui
-    image: gitlab-master.nvidia.com:5005/holoscan/copilot-blueprint:ui
+    image: vlm-surgical-agents:ui
     network_mode: host
-    volumes:
-      - $HOME/nvidia/VLM-Surgical-Agent-Framework/annotations:/app/annotations
     depends_on:
       vllm:
         condition: service_healthy

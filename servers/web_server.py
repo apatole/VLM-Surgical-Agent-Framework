@@ -487,10 +487,51 @@ class Webserver(threading.Thread):
             data = request.json
             self._logger.debug(f"Received post-op note request: {data}")
             
-            annotations_dir = os.getenv("ANNOTATIONS_DIR", "/app/annotations")
-
-            self._logger.info("Attempting to use stored annotations")
-            try:
+            if data and 'notes' in data and 'annotations' in data:
+                self._logger.info("Using frontend-provided data for post-op note generation")
+                
+                # Create a temporary folder for this data
+                import datetime
+                import tempfile
+                temp_dir = tempfile.mkdtemp(prefix="temp_procedure_")
+                
+                # Save the annotation data
+                annotation_json = os.path.join(temp_dir, "annotation.json")
+                with open(annotation_json, 'w') as f:
+                    json.dump(data['annotations'], f, indent=2)
+                
+                # Save the notes data
+                notes_json = os.path.join(temp_dir, "notetaker_notes.json")
+                with open(notes_json, 'w') as f:
+                    json.dump(data['notes'], f, indent=2)
+                
+                procedure_folder = temp_dir
+                self._logger.info(f"Created temporary procedure folder: {procedure_folder}")
+                
+                # If we have frontend data but it's empty, return a basic note
+                if not data['notes'] and not data['annotations']:
+                    basic_note = {
+                        "procedure_information": {
+                            "procedure_type": "Unknown procedure",
+                            "date": datetime.datetime.now().strftime("%Y-%m-%d"),
+                            "duration": data.get('video_duration', 'Unknown'),
+                            "surgeon": "Not specified"
+                        },
+                        "findings": ["No findings recorded"],
+                        "procedure_timeline": [],
+                        "complications": []
+                    }
+                    return jsonify({
+                        "success": True, 
+                        "post_op_note": basic_note
+                    })
+                
+            else:
+                # No frontend data, look for annotations directory
+                self._logger.info("No frontend data, using stored annotations")
+                annotations_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'annotations')
+                os.makedirs(annotations_dir, exist_ok=True)
+                
                 # Find the most recent procedure folder
                 procedure_folders = []
                 for folder in os.listdir(annotations_dir):
@@ -499,53 +540,12 @@ class Webserver(threading.Thread):
                         if os.path.isdir(folder_path):
                             procedure_folders.append(folder_path)
                 
-                assert len(procedure_folders) > 0, "No procedure folders found"
-                # Get the most recent folder by modification time
-                procedure_folder = max(procedure_folders, key=os.path.getmtime)
-                self._logger.info(f"Using stored annotations from: {procedure_folder}")
-            except Exception as e:
-                if data and 'notes' in data and 'annotations' in data:
-                    self._logger.info("Using frontend-provided data for post-op note generation")
-                    
-                    # Create a temporary folder for this data
-                    import datetime
-                    # Use datetime as the folder name
-                    temp_dir = os.path.join(
-                        annotations_dir,
-                        "procedure_" + datetime.datetime.now().strftime("%Y_%m_%d__%H_%M_%S")
-                    )
-                    os.makedirs(temp_dir, exist_ok=True)
-                    # Save the annotation data
-                    annotation_json = os.path.join(temp_dir, "annotation.json")
-                    with open(annotation_json, 'w') as f:
-
-                        json.dump(data['notes'], f, indent=2)
-                    
-                    procedure_folder = temp_dir
-                    self._logger.info(f"Created temporary procedure folder: {procedure_folder}")
-                    
-                    # If we have frontend data but it's empty, return a basic note
-                    if not data['notes'] and not data['annotations']:
-                        basic_note = {
-                            "procedure_information": {
-                                "procedure_type": "Unknown procedure",
-                                "date": datetime.datetime.now().strftime("%Y-%m-%d"),
-                                "duration": data.get('video_duration', 'Unknown'),
-                                "surgeon": "Not specified"
-                            },
-                            "findings": ["No findings recorded"],
-                            "procedure_timeline": [],
-                            "complications": []
-                        }
-                        return jsonify({
-                            "success": True, 
-                            "post_op_note": basic_note
-                        })
-                else:
-                    # no other options, raise an error
+                if not procedure_folders:
                     self._logger.warning("No procedure annotations found")
                     return jsonify({"error": "No procedure annotations found"}), 404
-
+                    
+                # Get the most recent folder by modification time
+                procedure_folder = max(procedure_folders, key=os.path.getmtime)
             
             # Generate the post-op note using the agent
             self._logger.info(f"Generating post-op note from folder: {procedure_folder}")

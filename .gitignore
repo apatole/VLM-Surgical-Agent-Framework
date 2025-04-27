@@ -51,6 +51,3 @@ ENV/
 
 # Uploaded content
 uploaded_videos/
-
-# Annotations
-annotations/
