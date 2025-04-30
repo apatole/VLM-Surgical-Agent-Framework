@@ -20,3 +20,4 @@ elevenlabs
 vllm
 pynvml
 bitsandbytes
+flask
