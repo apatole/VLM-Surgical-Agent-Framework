@@ -1,0 +1,64 @@
+FROM nvcr.io/nvidia/pytorch:25.03-py3
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libsndfile1 \
+    portaudio19-dev \
+    gcc \
+    g++ \
+    git \
+    curl \
+    libomp-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Compile CTranslate2 from source
+RUN git clone --recursive https://github.com/OpenNMT/CTranslate2.git /usr/src/CTranslate2 \
+    && cd /usr/src/CTranslate2 \
+    && git checkout v4.6.0 \
+    && mkdir build \
+    && cd build \
+    && cmake .. -DWITH_CUDA=ON -DWITH_CUDNN=ON -DWITH_MKL=OFF \
+    && make -j$(nproc) \
+    && make install \
+    && ldconfig
+
+RUN cd /usr/src/CTranslate2/python \
+    # && pip install -r install_requirements.txt \
+    && python setup.py bdist_wheel \
+    && pip install dist/*.whl
+
+# Install Python dependencies
+RUN pip3 install --no-cache-dir \
+    numpy \
+    pyaudio \
+    soundfile \
+    librosa \
+    faster-whisper \
+    pyyaml \
+    websockets
+
+# Create a directory for the app
+WORKDIR /app
+
+# Create model directory
+RUN mkdir -p /app/models/whisper
+
+# Copy necessary files
+COPY servers/whisper_online_server.py /app/servers/
+# COPY jfk.flac /app/
+
+# Set the port and healthcheck
+EXPOSE ${WHISPER_PORT}
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD nc -z localhost ${WHISPER_PORT} || exit 1
+
+# Use the following a entrypoint and allow user to append optional arguments
+# python3 /app/servers/whisper_online_server.py <optional arguments from docker run
+
+ENTRYPOINT ["python3", "/app/servers/whisper_online_server.py"]
