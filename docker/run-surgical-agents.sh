@@ -55,7 +55,7 @@ check_docker() {
 
 # Function to download the surgical LLM model
 download_surgical_model() {
-    local model_dir="${REPO_PATH}/models/llm/Llama-3.2-11B-lora-surgical-4bit"
+    local model_dir="${REPO_PATH}/models/llm/Llama-3.2-11B-Vision-Surgical-CholecT50"
 
     echo -e "\n${BLUE}📥 Downloading NVIDIA Llama-3.2-11B-Vision-Surgical-CholecT50 model...${NC}"
 
@@ -92,7 +92,7 @@ download_surgical_model() {
 
 # Function to check if surgical model exists and download if needed
 ensure_surgical_model() {
-    local model_dir="${REPO_PATH}/models/llm/Llama-3.2-11B-lora-surgical-4bit"
+    local model_dir="${REPO_PATH}/models/llm/Llama-3.2-11B-Vision-Surgical-CholecT50"
     local model_config="${model_dir}/config.json"
 
     if [ -f "$model_config" ]; then
@@ -154,6 +154,32 @@ build_ui() {
     echo -e "${GREEN}✅ UI build completed${NC}"
 }
 
+# Function to ensure TTS directories exist
+ensure_tts_directories() {
+    local tts_models_dir="${REPO_PATH}/tts-service/models"
+    local tts_cache_dir="${REPO_PATH}/tts-service/cache"
+
+    if [ ! -d "$tts_models_dir" ]; then
+        echo -e "${YELLOW}📁 Creating TTS models directory...${NC}"
+        mkdir -p "$tts_models_dir"
+    fi
+
+    if [ ! -d "$tts_cache_dir" ]; then
+        echo -e "${YELLOW}📁 Creating TTS cache directory...${NC}"
+        mkdir -p "$tts_cache_dir"
+    fi
+
+    echo -e "${GREEN}✅ TTS directories ready${NC}"
+}
+
+# Function to build TTS service
+build_tts() {
+    echo -e "\n${BLUE}🔨 Building TTS Server...${NC}"
+    ensure_tts_directories
+    docker build -t vlm-surgical-agents:tts -f "$REPO_PATH/tts-service/Dockerfile" "$REPO_PATH/tts-service"
+    echo -e "${GREEN}✅ TTS build completed${NC}"
+}
+
 # Function to stop containers
 stop_containers() {
     local component="$1"
@@ -169,8 +195,11 @@ stop_containers() {
         ui)
             containers="vlm-surgical-ui"
             ;;
+        tts)
+            containers="vlm-surgical-tts"
+            ;;
         *)
-            containers="vlm-surgical-vllm vlm-surgical-whisper vlm-surgical-ui"
+            containers="vlm-surgical-vllm vlm-surgical-whisper vlm-surgical-ui vlm-surgical-tts"
             ;;
     esac
 
@@ -210,7 +239,7 @@ run_vllm() {
         -v ${REPO_PATH}/models:/vllm-workspace/models \
         --restart unless-stopped \
         $VLLM_IMAGE \
-        --model models/llm/Llama-3.2-11B-lora-surgical-4bit \
+        --model models/llm/Llama-3.2-11B-Vision-Surgical-CholecT50 \
         --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION} \
         ${ENFORCE_EAGER_FLAG} \
         --max-model-len 4096 \
@@ -244,6 +273,25 @@ run_ui() {
         --restart unless-stopped \
         vlm-surgical-agents:ui
     echo -e "${GREEN}✅ UI Server started${NC}"
+}
+
+# Function to run TTS server
+run_tts() {
+    echo -e "\n${BLUE}🚀 Starting TTS Server...${NC}"
+    ensure_tts_directories
+    docker run -d \
+        --name vlm-surgical-tts \
+        --net host \
+        --gpus all \
+        -v ${REPO_PATH}/tts-service/models:/app/models \
+        -v ${REPO_PATH}/tts-service/cache:/app/cache \
+        -e TTS_MODELS_DIR=/app/models \
+        -e TTS_CACHE_DIR=/app/cache \
+        -e TTS_USE_CUDA=true \
+        -e PORT=8082 \
+        --restart unless-stopped \
+        vlm-surgical-agents:tts
+    echo -e "${GREEN}✅ TTS Server started${NC}"
 }
 
 # Function to show status
@@ -291,6 +339,16 @@ show_status() {
         else
             echo -e "${RED}❌ UI Server:${NC} Not found"
         fi
+
+        # Check TTS status
+        local tts_status=$(docker ps --filter "name=vlm-surgical-tts" --format "{{.Status}}" 2>/dev/null)
+        if [[ "$tts_status" =~ ^Up ]]; then
+            echo -e "${GREEN}✅ TTS Server:${NC} http://localhost:8082 (Text-to-Speech) - $tts_status"
+        elif [ -n "$tts_status" ]; then
+            echo -e "${YELLOW}⚠️  TTS Server:${NC} $tts_status"
+        else
+            echo -e "${RED}❌ TTS Server:${NC} Not found"
+        fi
     fi
 
     echo -e "\n${YELLOW}📝 Useful commands:${NC}"
@@ -327,6 +385,14 @@ show_logs() {
                 echo "UI container not found"
             fi
             ;;
+        tts)
+            echo -e "${BLUE}📋 TTS Server Logs:${NC}"
+            if docker ps -a --filter "name=vlm-surgical-tts" --format "{{.Names}}" | grep -q "vlm-surgical-tts"; then
+                docker logs vlm-surgical-tts --tail 50
+            else
+                echo "TTS container not found"
+            fi
+            ;;
         *)
             echo -e "${BLUE}📋 All Container Logs:${NC}"
             echo -e "${BLUE}--- vLLM Logs ---${NC}"
@@ -347,6 +413,12 @@ show_logs() {
             else
                 echo "UI container not found"
             fi
+            echo -e "\n${BLUE}--- TTS Logs ---${NC}"
+            if docker ps -a --filter "name=vlm-surgical-tts" --format "{{.Names}}" | grep -q "vlm-surgical-tts"; then
+                docker logs vlm-surgical-tts --tail 30 | head -20
+            else
+                echo "TTS container not found"
+            fi
             ;;
     esac
 }
@@ -366,10 +438,14 @@ handle_build() {
         ui)
             build_ui
             ;;
+        tts)
+            build_tts
+            ;;
         *)
             build_vllm
             build_whisper
             build_ui
+            build_tts
             echo -e "\n${GREEN}✅ All images built successfully!${NC}"
             ;;
     esac
@@ -393,12 +469,18 @@ handle_run() {
             stop_containers "ui"
             run_ui
             ;;
+        tts)
+            stop_containers "tts"
+            run_tts
+            ;;
         *)
             stop_containers
             run_vllm
             sleep 5
             run_whisper
             sleep 3
+            run_tts
+            sleep 2
             run_ui
             show_status
             ;;
@@ -429,15 +511,24 @@ handle_build_and_run() {
             run_ui
             echo -e "${GREEN}✅ UI built and started${NC}"
             ;;
+        tts)
+            build_tts
+            stop_containers "tts"
+            run_tts
+            echo -e "${GREEN}✅ TTS built and started${NC}"
+            ;;
         *)
             build_vllm
             build_whisper
             build_ui
+            build_tts
             stop_containers
             run_vllm
             sleep 5
             run_whisper
             sleep 3
+            run_tts
+            sleep 2
             run_ui
             show_status
             ;;
@@ -462,6 +553,7 @@ show_help() {
     echo -e "  vllm           vLLM server only"
     echo -e "  whisper        Whisper server only"
     echo -e "  ui             UI server only"
+    echo -e "  tts            TTS server only"
     echo -e "  (no component) All components (default)"
     echo -e ""
     echo -e "${YELLOW}Examples:${NC}"
@@ -473,30 +565,35 @@ show_help() {
     echo -e "  $0 build vllm           # Build only vLLM server"
     echo -e "  $0 build whisper        # Build only Whisper server"
     echo -e "  $0 build ui             # Build only UI server"
+    echo -e "  $0 build tts            # Build only TTS server"
     echo -e ""
     echo -e "${BLUE}  Run Commands:${NC}"
     echo -e "  $0 run                  # Run all components"
     echo -e "  $0 run vllm             # Run only vLLM server"
     echo -e "  $0 run whisper          # Run only Whisper server"
     echo -e "  $0 run ui               # Run only UI server"
+    echo -e "  $0 run tts              # Run only TTS server"
     echo -e ""
     echo -e "${BLUE}  Build and Run Commands:${NC}"
     echo -e "  $0 build_and_run        # Build and run all components"
     echo -e "  $0 build_and_run vllm   # Build and run only vLLM server"
     echo -e "  $0 build_and_run whisper # Build and run only Whisper server"
     echo -e "  $0 build_and_run ui     # Build and run only UI server"
+    echo -e "  $0 build_and_run tts    # Build and run only TTS server"
     echo -e ""
     echo -e "${BLUE}  Stop Commands:${NC}"
     echo -e "  $0 stop                 # Stop all containers"
     echo -e "  $0 stop vllm            # Stop only vLLM server"
     echo -e "  $0 stop whisper         # Stop only Whisper server"
     echo -e "  $0 stop ui              # Stop only UI server"
+    echo -e "  $0 stop tts             # Stop only TTS server"
     echo -e ""
     echo -e "${BLUE}  Logs Commands:${NC}"
     echo -e "  $0 logs                 # Show logs for all containers"
     echo -e "  $0 logs vllm            # Show vLLM server logs"
     echo -e "  $0 logs whisper         # Show Whisper server logs"
     echo -e "  $0 logs ui              # Show UI server logs"
+    echo -e "  $0 logs tts             # Show TTS server logs"
     echo -e ""
     echo -e "${BLUE}  Download Command:${NC}"
     echo -e "  $0 download             # Download surgical LLM model"
