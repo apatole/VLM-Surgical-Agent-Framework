@@ -86,6 +86,17 @@ models/
 mkdir -p annotations uploaded_videos
 ```
 
+## Alternative: Docker Deployment
+
+For easier deployment and isolation, you can use Docker containers instead of the traditional installation:
+
+```bash
+cd docker
+./run-surgical-agents.sh
+```
+
+This will automatically download models, build all necessary containers, and start the services. See [docker/README.md](docker/README.md) for detailed Docker deployment instructions.
+
 ## Running the Surgical Agentic Framework Demo
 
 ### Production Mode
