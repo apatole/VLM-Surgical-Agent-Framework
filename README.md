@@ -39,7 +39,7 @@ The Surgical Agentic Framework Demo is a multimodal agentic AI framework tailore
 1. Clone or Download this repository:
 
 ```
-git clone https://github.com/monai/surgical_agentic_framework.git
+git clone https://github.com/project-monai/vlm-surgical-agent-framework.git
 cd surgical_agentic_framework
 ```
 
@@ -50,8 +50,8 @@ vLLM is already configured in the project scripts. If you need to set up a custo
 3. Install Dependencies:
 
 ```
-conda create -n surgical_agentic_framework python=3.12
-conda activate surgical_agentic_framework
+conda create -n surgical_agent_framework python=3.12
+conda activate surgical_agent_framework
 pip install -r requirements.txt
 ```
 
@@ -63,22 +63,39 @@ npm install
 
 5. Models Folder:
 
-* Place your model files in ```models/llm/``` for LLMs and ```models/whisper/``` for Whisper models.
-* This repository is configured to use a Llama-3.2-11B model with surgical fine-tuning.
-* The model is served using vLLM for optimal performance.
+* Where to put things
 
-* Folder structure is: 
+    * LLM checkpoints live in models/llm/
+    * Whisper (speech‑to‑text) checkpoints live in models/whisper/ (they will be downloaded automatically at runtime the first time you invoke Whisper).
+
+* Default LLM
+    * This repository is pre‑configured for [NVIDIA Llama‑3.2‑11B‑Vision‑Surgical‑CholecT50](https://huggingface.co/nvidia/Llama-3.2-11B-Vision-Surgical-CholecT50), a surgical‑domain fine‑tuned variant of Llama 3.2‑11B. You may choose to replace it with a finetuned VLM of your choosing.
+
+Download the default model from Hugging Face with Git LFS:
+
+```
+# Download the checkpoint into the expected folder
+huggingface-cli download nvidia/Llama-3.2-11B-Vision-Surgical-CholecT50 \
+  --local-dir models/llm/Llama-3.2-11B-Vision-Surgical-CholecT50 \
+  --local-dir-use-symlinks False     
+```
+
+* Serving engine
+    * All LLMs are served through vLLM for streaming. Adjust the launch arguments in run_vllm_server.sh if you change model names or paths.
+
+* Resulting folder layout
 
 ```
 models/
   ├── llm/
-  │   └── Llama-3.2-11B-lora-surgical-4bit/  <-- LLM model files
-  └── whisper/                               <-- Whisper models (downloaded at runtime)
+  │   └── Llama-3.2-11B-Vision-Surgical-CholecT50/   ← LLM model files
+  └── whisper/                                       ← Whisper models (auto‑downloaded)
 ```
 
 6. Setup: 
 
-* Edit ```scripts/start_app.sh``` if you need to change ports or model file names.
+* Edit ```scripts/start_app.sh``` if you need to change ports.
+* Edit ```scripts/run_vllm_server.sh``` if you need to change quantization, model name, or VRAM utilization (4bit requires ~10GB VRAM).
 
 7. Create necessary directories:
 

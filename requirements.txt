@@ -2,6 +2,7 @@ numpy
 pyaudio
 soundfile
 librosa
+huggingface_hub[cli]
 openai
 faster-whisper
 requests
