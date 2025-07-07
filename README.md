@@ -40,7 +40,7 @@ The Surgical Agentic Framework Demo is a multimodal agentic AI framework tailore
 
 ```
 git clone https://github.com/project-monai/vlm-surgical-agent-framework.git
-cd surgical_agentic_framework
+cd VLM-Surgical-Agent-Framework
 ```
 
 2. Setup vLLM (Optional)
