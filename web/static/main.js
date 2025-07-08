@@ -344,15 +344,11 @@ function handleServerMessage(message) {
     if (message.agent_response.startsWith('Annotation:')) {
       // Add to annotations panel
       addAnnotation(message.agent_response);
-      // Also add to chat as normal
-      addMessageToChat(message.agent_response, 'agent');
-    } 
+    }
     // Check if this is a note (or has is_note flag)
     else if (message.is_note || message.agent_response.toLowerCase().includes('note:')) {
       // Add to notes panel with user's original message if available
       addNote(message.agent_response, message.original_user_input || message.user_input || '');
-      // Also add to chat
-      addMessageToChat(message.agent_response, 'agent');
     }
     else {
       // Regular response - just add to chat
