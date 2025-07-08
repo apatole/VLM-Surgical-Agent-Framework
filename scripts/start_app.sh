@@ -24,7 +24,7 @@ fi
 
 # 1) Start vLLM server first, which will serve models on port 8000 by default
 echo "Starting vLLM server on port 8000..."
-bash scripts/run_vllm_server.sh >> "${LMM_LOG_FILE}" 2>&1 &
+bash ./scripts/run_vllm_server.sh >> "${LMM_LOG_FILE}" 2>&1 &
 
 # Function to check if vLLM server is up and responding
 check_vllm_server() {
@@ -37,7 +37,7 @@ check_vllm_server() {
 
 # Wait for vLLM server to be ready with active polling
 echo "Waiting for vLLM server to initialize..."
-MAX_WAIT_TIME=180  # Maximum wait of 3 minutes
+MAX_WAIT_TIME=240  # Maximum wait of 3 minutes
 CHECK_INTERVAL=3   # Check every 3 seconds
 ELAPSED_TIME=0
 
