@@ -34,7 +34,7 @@ COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --ignore-installed --no-cache-dir -r requirements.txt && \
+    pip3 install --no-cache-dir -r requirements.txt && \
     pip3 install --no-cache-dir espeak-phonemizer
 
 # Copy application code

@@ -2686,8 +2686,131 @@ window.audioContext = null;     // Web Audio API context
 window.audioQueue = [];         // Queue for audio chunks
 window.isPlayingTTS = false;    // Flag to track TTS playback state
 window.reconnectAttempts = 0;   // Track reconnection attempts
+window.currentChunkIndex = 0;   // Track current chunk being processed
+window.totalChunks = 0;         // Total number of chunks in current request
+window.isProcessingChunks = false; // Flag to track if we're processing chunks
+window.pendingChunks = new Map(); // Track pending chunks waiting for audio
+window.chunkTimeouts = new Map(); // Track chunk timeouts
 const MAX_RECONNECT_ATTEMPTS = 3;
 const TTS_WS_URL = 'ws://localhost:8082/ws/tts'; // Direct connection to TTS service
+const CHUNK_TIMEOUT_MS = 30000; // 30 seconds timeout per chunk
+
+// Text chunking configuration
+const CHUNK_CONFIG = {
+  maxChunkLength: 150,  // Maximum characters per chunk
+  sentenceEnders: ['.', '!', '?'],
+  phraseBreaks: [',', ';', ':'],
+  minChunkLength: 20    // Minimum characters per chunk
+};
+
+// Split text into chunks for TTS processing
+function splitTextIntoChunks(text) {
+  // Handle empty or invalid text
+  if (!text || typeof text !== 'string' || text.trim().length === 0) {
+    return [];
+  }
+
+  // If text is short enough, return as single chunk
+  if (text.length <= CHUNK_CONFIG.maxChunkLength) {
+    return [text.trim()];
+  }
+
+  const chunks = [];
+  let currentChunk = '';
+  let sentences = [];
+
+  // First, split by sentence endings
+  let currentSentence = '';
+  for (let i = 0; i < text.length; i++) {
+    currentSentence += text[i];
+
+    if (CHUNK_CONFIG.sentenceEnders.includes(text[i])) {
+      // Look ahead for potential quotes or closing punctuation
+      let j = i + 1;
+      while (j < text.length && /[\s"')\]}>]/.test(text[j])) {
+        currentSentence += text[j];
+        j++;
+      }
+      i = j - 1; // Adjust index
+
+      const trimmedSentence = currentSentence.trim();
+      if (trimmedSentence) {
+        sentences.push(trimmedSentence);
+      }
+      currentSentence = '';
+    }
+  }
+
+  // Add remaining text as final sentence
+  if (currentSentence.trim()) {
+    sentences.push(currentSentence.trim());
+  }
+
+  // Now group sentences into chunks
+  for (const sentence of sentences) {
+    if (currentChunk.length + sentence.length <= CHUNK_CONFIG.maxChunkLength) {
+      currentChunk += (currentChunk ? ' ' : '') + sentence;
+    } else {
+      // If current chunk has content, add it
+      if (currentChunk) {
+        chunks.push(currentChunk);
+      }
+
+      // If sentence is too long, split it further
+      if (sentence.length > CHUNK_CONFIG.maxChunkLength) {
+        const subChunks = splitLongSentence(sentence);
+        chunks.push(...subChunks);
+        currentChunk = '';
+      } else {
+        currentChunk = sentence;
+      }
+    }
+  }
+
+  // Add remaining chunk
+  if (currentChunk) {
+    chunks.push(currentChunk);
+  }
+
+  return chunks.filter(chunk => chunk.trim().length > 0);
+}
+
+// Split a long sentence into smaller chunks
+function splitLongSentence(sentence) {
+  const chunks = [];
+  let currentChunk = '';
+  const words = sentence.split(' ');
+
+  for (const word of words) {
+    // Handle extremely long words that exceed chunk size
+    if (word.length > CHUNK_CONFIG.maxChunkLength) {
+      console.warn(`Word "${word.substring(0, 20)}..." exceeds chunk length, truncating`);
+      const truncatedWord = word.substring(0, CHUNK_CONFIG.maxChunkLength - 3) + '...';
+
+      if (currentChunk) {
+        chunks.push(currentChunk);
+        currentChunk = '';
+      }
+      chunks.push(truncatedWord);
+      continue;
+    }
+
+    if (currentChunk.length + word.length + 1 <= CHUNK_CONFIG.maxChunkLength) {
+      currentChunk += (currentChunk ? ' ' : '') + word;
+    } else {
+      if (currentChunk) {
+        chunks.push(currentChunk);
+      }
+      currentChunk = word;
+    }
+  }
+
+  if (currentChunk) {
+    chunks.push(currentChunk);
+  }
+
+  return chunks.filter(chunk => chunk.trim().length > 0);
+}
 
 // Initialize TTS based on selected service
 function initializeTTS(event) {
@@ -2776,7 +2899,33 @@ function connectTTSWebSocket() {
       if (event.data instanceof Blob) {
         // Binary audio data received
         const arrayBuffer = await event.data.arrayBuffer();
-        await playAudioData(arrayBuffer);
+
+        // If we're processing chunks, add to queue; otherwise play directly
+        if (window.isProcessingChunks) {
+          await addToAudioQueue(arrayBuffer);
+
+          // Check if we have a pending chunk that's waiting for this audio
+          // Use the current chunk index to find the pending chunk
+          const currentChunkKey = `chunk_${window.currentChunkIndex}`;
+          if (window.pendingChunks.has(currentChunkKey)) {
+            const chunkData = window.pendingChunks.get(currentChunkKey);
+            window.pendingChunks.delete(currentChunkKey);
+
+            // Clear timeout for this chunk
+            if (window.chunkTimeouts.has(currentChunkKey)) {
+              clearTimeout(window.chunkTimeouts.get(currentChunkKey));
+              window.chunkTimeouts.delete(currentChunkKey);
+            }
+
+            // Move to next chunk
+            window.currentChunkIndex++;
+
+            // Process next chunk
+            processNextChunk(chunkData.chunks);
+          }
+        } else {
+          await playAudioData(arrayBuffer);
+        }
       } else {
         // JSON status message
         try {
@@ -2893,6 +3042,131 @@ async function playAudioData(arrayBuffer) {
   }
 }
 
+// Audio queue management for chunked TTS
+async function addToAudioQueue(arrayBuffer) {
+  // Manage memory before adding new item
+  manageAudioQueueMemory();
+
+  const audioItem = {
+    arrayBuffer: arrayBuffer,
+    timestamp: Date.now()
+  };
+
+  window.audioQueue.push(audioItem);
+
+  // Start playing if not already playing
+  if (!window.isPlayingTTS) {
+    await playNextFromQueue();
+  }
+}
+
+async function playNextFromQueue() {
+  if (window.audioQueue.length === 0) {
+    window.isPlayingTTS = false;
+    return;
+  }
+
+  const audioItem = window.audioQueue.shift();
+  window.isPlayingTTS = true;
+
+  try {
+    if (window.audioContext && window.audioContext.state !== 'closed') {
+      // Use Web Audio API for better performance
+      const audioBuffer = await window.audioContext.decodeAudioData(audioItem.arrayBuffer.slice(0));
+      const source = window.audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(window.audioContext.destination);
+
+      // Track the audio source for cleanup
+      window.currentTtsAudio = source;
+
+      source.onended = async () => {
+        window.currentTtsAudio = null;
+        // Play next item in queue
+        await playNextFromQueue();
+      };
+
+      // Resume audio context if suspended (Chrome autoplay policy)
+      if (window.audioContext.state === 'suspended') {
+        await window.audioContext.resume();
+      }
+
+      source.start();
+
+    } else {
+      // Fallback to regular Audio API
+      const blob = new Blob([audioItem.arrayBuffer], { type: 'audio/wav' });
+      const audioUrl = URL.createObjectURL(blob);
+      const audio = new Audio(audioUrl);
+
+      window.currentTtsAudio = audio;
+
+      audio.addEventListener('ended', async () => {
+        URL.revokeObjectURL(audioUrl);
+        window.currentTtsAudio = null;
+        // Play next item in queue
+        await playNextFromQueue();
+      });
+
+      audio.addEventListener('error', async (error) => {
+        console.error('Error playing TTS audio:', error);
+        URL.revokeObjectURL(audioUrl);
+        window.currentTtsAudio = null;
+        // Continue with next item even if this one failed
+        await playNextFromQueue();
+      });
+
+      await audio.play();
+    }
+
+  } catch (error) {
+    console.error('Error playing queued TTS audio:', error);
+    window.currentTtsAudio = null;
+    // Continue with next item even if this one failed
+    await playNextFromQueue();
+  }
+}
+
+// Clear audio queue
+function clearAudioQueue() {
+  // Clean up any audio URLs to prevent memory leaks
+  window.audioQueue.forEach(item => {
+    if (item.audioUrl) {
+      URL.revokeObjectURL(item.audioUrl);
+    }
+  });
+
+  window.audioQueue = [];
+  window.isPlayingTTS = false;
+  window.currentTtsAudio = null;
+}
+
+// Add memory management for audio queue
+function manageAudioQueueMemory() {
+  const maxQueueSize = 10; // Maximum number of audio chunks to keep in memory
+  const maxAge = 60000; // Maximum age of audio chunks (1 minute)
+  const now = Date.now();
+
+  // Remove old items
+  window.audioQueue = window.audioQueue.filter(item => {
+    if (now - item.timestamp > maxAge) {
+      if (item.audioUrl) {
+        URL.revokeObjectURL(item.audioUrl);
+      }
+      return false;
+    }
+    return true;
+  });
+
+  // Remove excess items (keep only the latest ones)
+  while (window.audioQueue.length > maxQueueSize) {
+    const oldItem = window.audioQueue.shift();
+    if (oldItem.audioUrl) {
+      URL.revokeObjectURL(oldItem.audioUrl);
+    }
+  }
+}
+
 // Update TTS service options UI
 function updateTtsServiceOptions() {
   const ttsService = document.getElementById('ttsService');
@@ -2915,6 +3189,18 @@ function updateTtsServiceOptions() {
 
 // Stop current TTS audio if playing
 function stopCurrentTTS() {
+  // Stop chunk processing
+  window.isProcessingChunks = false;
+
+  // Clear pending chunks and timeouts
+  window.pendingChunks.clear();
+  window.chunkTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+  window.chunkTimeouts.clear();
+
+  // Clear audio queue
+  clearAudioQueue();
+
+  // Stop currently playing audio
   if (window.currentTtsAudio) {
     try {
       if (window.currentTtsAudio.stop) {
@@ -2944,19 +3230,34 @@ function resetTTSState() {
     window.ttsDebounceTimer = null;
   }
 
+  // Reset chunked processing state
+  window.currentChunkIndex = 0;
+  window.totalChunks = 0;
+  window.isProcessingChunks = false;
+
+  // Clear pending chunks and timeouts
+  window.pendingChunks.clear();
+  window.chunkTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+  window.chunkTimeouts.clear();
+
   // Clear audio queue
-  window.audioQueue = [];
+  clearAudioQueue();
 }
 
-// Generate speech from text with audio management
+// Generate speech from text with chunked processing for better latency
 function generateSpeech(text) {
   if (!text || !window.isTtsEnabled) return;
 
-  // Simple check - if not connected, just show message and return (POC pattern)
-  if (!window.ttsWebSocket || window.ttsWebSocket.readyState !== WebSocket.OPEN) {
-    console.warn('TTS WebSocket not connected. Please check connection status.');
-    showToast('TTS not connected. Please enable TTS to connect.', 'warning');
-    return; // NO automatic connection attempts - user must manually connect
+  const ttsService = document.getElementById('ttsService');
+  const ttsServiceValue = ttsService ? ttsService.value : 'local';
+
+  // Check connection for local TTS service
+  if (ttsServiceValue === 'local') {
+    if (!window.ttsWebSocket || window.ttsWebSocket.readyState !== WebSocket.OPEN) {
+      console.warn('TTS WebSocket not connected. Please check connection status.');
+      showToast('TTS not connected. Please enable TTS to connect.', 'warning');
+      return;
+    }
   }
 
   // Clear any existing debounce timer (for cleanup)
@@ -2965,28 +3266,78 @@ function generateSpeech(text) {
     window.ttsDebounceTimer = null;
   }
 
-  // Stop any currently playing TTS audio immediately
+  // Stop any currently playing TTS audio and clear queue
   stopCurrentTTS();
+  clearAudioQueue();
 
-  // Execute TTS request immediately - no delay for better user experience
-  performTTSRequest(text);
+  // Split text into chunks for better latency
+  const chunks = splitTextIntoChunks(text);
+
+  if (chunks.length === 0) return;
+
+  // Initialize chunk processing state
+  window.currentChunkIndex = 0;
+  window.totalChunks = chunks.length;
+  window.isProcessingChunks = true;
+
+  console.log(`Starting chunked TTS processing: ${chunks.length} chunks`);
+
+  // Process chunks sequentially
+  processNextChunk(chunks);
 }
 
-// Perform the actual TTS request via WebSocket
-function performTTSRequest(text) {
-  const ttsService = document.getElementById('ttsService');
-  const ttsServiceValue = ttsService ? ttsService.value : 'local';
-
-  // Only use WebSocket for local TTS service
-  if (ttsServiceValue !== 'local') {
-    // Fall back to REST API for ElevenLabs
-    performRestTTSRequest(text);
+// Process the next chunk in the sequence
+function processNextChunk(chunks) {
+  // Safety check: ensure we have valid chunks array
+  if (!chunks || !Array.isArray(chunks)) {
+    console.error('Invalid chunks array provided to processNextChunk');
+    window.isProcessingChunks = false;
     return;
   }
 
+  if (!window.isProcessingChunks || window.currentChunkIndex >= chunks.length) {
+    // All chunks processed
+    window.isProcessingChunks = false;
+    console.log('All TTS chunks processed');
+    return;
+  }
+
+  const chunk = chunks[window.currentChunkIndex];
+
+  // Safety check: ensure chunk is valid
+  if (!chunk || typeof chunk !== 'string' || chunk.trim().length === 0) {
+    console.warn(`Skipping invalid chunk at index ${window.currentChunkIndex}`);
+    window.currentChunkIndex++;
+    processNextChunk(chunks);
+    return;
+  }
+
+  console.log(`Processing chunk ${window.currentChunkIndex + 1}/${window.totalChunks}: "${chunk.substring(0, 50)}..."`);
+
+  const ttsService = document.getElementById('ttsService');
+  const ttsServiceValue = ttsService ? ttsService.value : 'local';
+
+  try {
+    if (ttsServiceValue === 'local') {
+      performChunkedWebSocketTTSRequest(chunk, chunks);
+    } else {
+      performChunkedRestTTSRequest(chunk, chunks);
+    }
+  } catch (error) {
+    console.error('Error processing chunk:', error);
+
+    // Continue with next chunk even if this one failed
+    window.currentChunkIndex++;
+    processNextChunk(chunks);
+  }
+}
+
+// Perform chunked WebSocket TTS request
+function performChunkedWebSocketTTSRequest(chunk, chunks) {
   if (!window.ttsWebSocket || window.ttsWebSocket.readyState !== WebSocket.OPEN) {
     console.error('TTS WebSocket not connected');
     showToast('TTS service not connected', 'error');
+    window.isProcessingChunks = false;
     return;
   }
 
@@ -2996,26 +3347,64 @@ function performTTSRequest(text) {
 
   // Format message to match TTS service WebSocket API
   const request = {
-    text: text,
-    model: modelName  // Use "model" not "model_name" to match TTS service expectations
+    text: chunk,
+    model: modelName,
+    chunk_index: window.currentChunkIndex,
+    total_chunks: window.totalChunks
   };
 
   try {
+    // Mark this chunk as pending
+    const chunkKey = `chunk_${window.currentChunkIndex}`;
+    window.pendingChunks.set(chunkKey, { chunks: chunks, timestamp: Date.now() });
+
+    // Set timeout for this chunk
+    const timeoutId = setTimeout(() => {
+      console.error(`Chunk ${window.currentChunkIndex} timed out`);
+
+      // Remove from pending chunks
+      window.pendingChunks.delete(chunkKey);
+      window.chunkTimeouts.delete(chunkKey);
+
+      // Move to next chunk even if this one failed
+      window.currentChunkIndex++;
+      processNextChunk(chunks);
+    }, CHUNK_TIMEOUT_MS);
+
+    window.chunkTimeouts.set(chunkKey, timeoutId);
+
+    // Send the request
     window.ttsWebSocket.send(JSON.stringify(request));
+
+    // Note: We don't immediately process the next chunk here.
+    // The next chunk will be processed when the audio for this chunk is received
+    // in the WebSocket onmessage handler.
+
   } catch (error) {
-    console.error('Error sending TTS WebSocket request:', error);
+    console.error('Error sending chunked TTS WebSocket request:', error);
     showToast('Failed to send TTS request', 'error');
+    window.isProcessingChunks = false;
+
+    // Clean up pending chunk
+    const chunkKey = `chunk_${window.currentChunkIndex}`;
+    window.pendingChunks.delete(chunkKey);
+    if (window.chunkTimeouts.has(chunkKey)) {
+      clearTimeout(window.chunkTimeouts.get(chunkKey));
+      window.chunkTimeouts.delete(chunkKey);
+    }
   }
 }
 
-// Fallback REST API implementation for ElevenLabs
-function performRestTTSRequest(text) {
+// Perform chunked REST API TTS request
+function performChunkedRestTTSRequest(chunk, chunks) {
   const ttsService = document.getElementById('ttsService');
   const ttsServiceValue = ttsService ? ttsService.value : 'local';
 
   let requestData = {
-    text: text,
-    tts_service: ttsServiceValue
+    text: chunk,
+    tts_service: ttsServiceValue,
+    chunk_index: window.currentChunkIndex,
+    total_chunks: window.totalChunks
   };
 
   if (ttsServiceValue === 'elevenlabs') {
@@ -3032,51 +3421,35 @@ function performRestTTSRequest(text) {
     body: JSON.stringify(requestData)
   })
   .then(response => response.json())
-  .then(data => {
+  .then(async (data) => {
     if (data.tts_base64) {
-      // Stop any current audio before playing new one
-      stopCurrentTTS();
-
-      // Create and play new audio
+      // Convert base64 to arrayBuffer and add to queue
       const audioFormat = ttsServiceValue === 'elevenlabs' ? 'audio/mp3' : 'audio/wav';
-      const audio = new Audio(`data:${audioFormat};base64,${data.tts_base64}`);
+      const binaryString = atob(data.tts_base64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
 
-      // Track this audio as the current playing audio
-      window.currentTtsAudio = audio;
-      window.isPlayingTTS = true;
+      await addToAudioQueue(bytes.buffer);
 
-      // Clean up when audio finishes
-      audio.addEventListener('ended', () => {
-        if (window.currentTtsAudio === audio) {
-          window.currentTtsAudio = null;
-          window.isPlayingTTS = false;
-        }
-      });
+      // Move to next chunk
+      window.currentChunkIndex++;
 
-      // Clean up on error
-      audio.addEventListener('error', (error) => {
-        console.error('Error playing TTS audio:', error);
-        if (window.currentTtsAudio === audio) {
-          window.currentTtsAudio = null;
-          window.isPlayingTTS = false;
-        }
-      });
-
-      // Play the audio
-      audio.play().catch(error => {
-        console.error('Error playing audio:', error);
-        if (window.currentTtsAudio === audio) {
-          window.currentTtsAudio = null;
-          window.isPlayingTTS = false;
-        }
-      });
+      // Process next chunk
+      processNextChunk(chunks);
     } else {
-      console.error('No audio data received from TTS service');
+      console.error('No audio data received from TTS service for chunk', window.currentChunkIndex);
+      // Continue with next chunk even if this one failed
+      window.currentChunkIndex++;
+      processNextChunk(chunks);
     }
   })
   .catch(error => {
-    console.error('Error generating speech:', error);
-    showToast('TTS Error: Failed to generate speech', 'error');
+    console.error('Error with chunked TTS request:', error);
+    // Continue with next chunk even if this one failed
+    window.currentChunkIndex++;
+    processNextChunk(chunks);
   });
 }
 
