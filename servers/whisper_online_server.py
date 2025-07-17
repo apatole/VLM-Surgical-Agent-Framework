@@ -511,8 +511,12 @@ class Connection:
         """
         Send one line of UTF-8 text back.
         """
-        line_bytes = (line + "\n").encode('utf-8', 'replace')
-        self.conn.sendall(line_bytes)
+        try:
+            line_bytes = (line + "\n").encode('utf-8', 'replace')
+            self.conn.sendall(line_bytes)
+        except (BrokenPipeError, ConnectionResetError, OSError) as e:
+            logger.warning(f"Client connection lost while sending data: {e}")
+            # Don't raise - let the connection close gracefully
 
 def serve_one_connection(conn):
     """
@@ -521,24 +525,41 @@ def serve_one_connection(conn):
       - decode + transcribe
       - send recognized text
     """
-    c = Connection(conn)
-    webm_data = c.receive_all()
-    logger.debug(f"Received {len(webm_data)} bytes from client. Decoding + Transcribing...")
+    try:
+        c = Connection(conn)
+        webm_data = c.receive_all()
+        logger.debug(f"Received {len(webm_data)} bytes from client. Decoding + Transcribing...")
 
-    text = transcribe_full_webm(webm_data)
+        # Check if we received valid data
+        if len(webm_data) == 0:
+            logger.warning("Received empty data from client")
+            c.send_line("0 0 ")
+            return
 
-    logger.debug(f"Final recognized text: {text}")
-    if text:
-        # Return one line, e.g. "0 0 recognized_text"
-        c.send_line(f"0 0 {text}")
-    else:
-        c.send_line("0 0 ")
+        text = transcribe_full_webm(webm_data)
 
-    conn.close()
-    logger.info("Connection to client closed")
+        logger.debug(f"Final recognized text: {text}")
+        if text:
+            # Return one line, e.g. "0 0 recognized_text"
+            c.send_line(f"0 0 {text}")
+        else:
+            c.send_line("0 0 ")
+
+    except (BrokenPipeError, ConnectionResetError, OSError) as e:
+        logger.warning(f"Connection error while serving client: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error serving client: {e}")
+    finally:
+        try:
+            conn.close()
+            logger.info("Connection to client closed")
+        except:
+            pass
 
 # Main server loop
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    # Enable socket reuse to avoid "Address already in use" errors
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind((args.host, args.port))
     s.listen(1)
     logger.info(f"Listening on {(args.host, args.port)}")

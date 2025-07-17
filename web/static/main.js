@@ -268,14 +268,24 @@ document.addEventListener('DOMContentLoaded', function() {
     showToast("WebSocket connection not available", "error");
   }
 
-  // Check if video is already loaded
+  // Initialize video element
   const videoElement = document.getElementById('surgery-video');
-  if (videoElement && videoElement.src && videoElement.src !== window.location.href) {
-    // Video is already loaded, enable the mic button
-    enableMicButton();
 
-    // Allow autoplay if the attribute is set in HTML
-    // videoElement.pause();
+  if (videoElement) {
+    // Ensure autoplay is disabled on page load
+    videoElement.autoplay = false;
+
+    // Reset video source to empty state on page load
+    videoElement.src = '';
+    videoElement.load();
+
+    // Pause any playing video
+    if (!videoElement.paused) {
+      videoElement.pause();
+    }
+
+    // Show placeholder message
+    showVideoPlaceholder();
 
     // Start automatic frame capture for annotations when video plays
     videoElement.addEventListener('play', () => {
@@ -1460,6 +1470,46 @@ function enableMicButton() {
   }
 }
 
+// Function to show video placeholder when no video is selected
+function showVideoPlaceholder() {
+  const videoElement = document.getElementById('surgery-video');
+  if (videoElement) {
+    // Create a canvas to show "No Video Selected" message
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 360;
+    const ctx = canvas.getContext('2d');
+
+    // Fill background
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw border
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
+
+    // Draw text
+    ctx.fillStyle = '#999';
+    ctx.font = '24px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('No Video Selected', canvas.width / 2, canvas.height / 2 - 10);
+
+    ctx.font = '16px Arial';
+    ctx.fillText('Upload or select a video to begin', canvas.width / 2, canvas.height / 2 + 20);
+
+    // Convert canvas to data URL and set as poster
+    const dataURL = canvas.toDataURL();
+    videoElement.poster = dataURL;
+
+    // Clear any existing source
+    videoElement.removeAttribute('src');
+    const sources = videoElement.querySelectorAll('source');
+    sources.forEach(source => source.removeAttribute('src'));
+    videoElement.load();
+  }
+}
+
 // Connect to the audio.js functions for recording
 function startRecording() {
   try {
@@ -2479,10 +2529,16 @@ function selectVideo(filename) {
 
       // Set new source and load (but don't play automatically)
       videoElement.src = data.video_src;
+
+      // Clear any placeholder poster
+      videoElement.removeAttribute('poster');
+
       videoElement.load();
 
-      // Enable autoplay
-      videoElement.autoplay = true;
+      // Explicitly play the video (replaces autoplay)
+      videoElement.play().catch(e => {
+        console.warn("Could not start video playback:", e);
+      });
 
       // Show success message
       showToast('Video loaded successfully!', 'success');
@@ -2611,10 +2667,18 @@ function uploadVideo() {
           console.warn("Could not pause video:", e);
         }
 
-        // Set new source with autoplay
+        // Set new source and load
         videoElement.src = data.video_src;
+
+        // Clear any placeholder poster
+        videoElement.removeAttribute('poster');
+
         videoElement.load();
-        videoElement.autoplay = true;
+
+        // Explicitly play the video (replaces autoplay)
+        videoElement.play().catch(e => {
+          console.warn("Could not start video playback:", e);
+        });
 
         // Enable the microphone button
         enableMicButton();
