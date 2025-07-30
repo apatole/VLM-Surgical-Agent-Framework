@@ -11,6 +11,7 @@ The Surgical Agentic Framework Demo is a multimodal agentic AI framework tailore
 * **Text-to-Speech**: The system can speak back the AI's response if you enable TTS. There are options for local TTS models (Coqui), as well as an ElevenLabs API.
 * **Computer Vision** or multimodal features are supported via a finetuned VLM (Vision Language Model), launched by vLLM.
 * **Video Upload and Processing**: Support for uploading and analyzing surgical videos.
+* **Live Streaming (WebRTC)**: Real-time analysis of live surgical streams via WebRTC with seamless mode switching between uploaded videos and live streams.
 * **Post-Operation Note Generation**: Automatic generation of structured post-operative notes based on the procedure data.
 
 
@@ -205,10 +206,41 @@ You can also use the development script for faster startup during development:
 
 ## Uploading and Processing Videos
 
+The framework supports two video source modes:
+
+### Uploaded Videos
 1. Click on the "Upload Video" button to add your own surgical videos
 2. Browse the video library by clicking "Video Library" 
 3. Select a video to analyze
 4. Use the chat interface to ask questions about the video or create annotations
+
+### Live Streaming (WebRTC)
+
+The framework now supports real-time analysis of live surgical streams via WebRTC:
+
+1. **Toggle to Live Stream Mode**: Select the "Live Stream" radio button in the video controls
+2. **Configure Server URL**: Enter your WebRTC server URL (default: `http://localhost:8080`)
+3. **Connect**: Click the "Connect" button to establish the WebRTC connection
+4. **Monitor Status**: The connection status indicator will show:
+   * Yellow: Connecting...
+   * Green: Connected
+   * Red: Error
+   * Gray: Disconnected
+5. **Auto Frame Capture**: The system automatically captures frames from the live stream for analysis
+6. **Disconnect**: Click "Disconnect" when finished to cleanly close the connection
+
+**WebRTC Server Requirements:**
+* The WebRTC server must provide the following API endpoints:
+  - `/iceServers` - Returns ICE server configuration
+  - `/offer` - Accepts WebRTC offer and returns answer
+* Compatible with the [Holohub live video server application](https://github.com/nvidia-holoscan/holohub) or any server implementing the same API
+
+**Features:**
+* Seamless switching between uploaded videos and live streams
+* Automatic ICE server configuration with fallback STUN server
+* Proper connection state management and cleanup
+* Support for fullscreen and frame capture in both modes
+* Real-time video analysis capabilities
 
 ## Generating Post-Operation Notes
 
@@ -274,6 +306,13 @@ Common issues and solutions:
    * Verify your microphone is working correctly
    * Check that the Whisper server is running
    * Adjust microphone settings in your browser
+
+4. **WebRTC Connection Issues**:
+   * Ensure the WebRTC server is running and accessible at the configured URL
+   * Check that the server implements the required `/iceServers` and `/offer` endpoints
+   * Verify network connectivity and firewall settings for WebRTC ports
+   * Check browser console for detailed WebRTC connection errors
+   * Ensure the video element has `autoplay` and `playsinline` attributes for proper stream playback
 
 ## Text-to-Speech (TTS)
 

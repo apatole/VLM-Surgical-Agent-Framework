@@ -202,21 +202,43 @@
       <div class="w-full lg:w-1/2 px-3 mb-3">
         <div id="video-container" class="mb-3">
           <div class="bg-dark-800 rounded-lg overflow-hidden shadow-lg border border-dark-700">
-            <div class="flex justify-between items-center p-2 bg-dark-900 border-b border-dark-700">
-              <div class="flex items-center">
-                <i class="fas fa-film text-primary-400 mr-2"></i>
-                <h5 class="font-semibold m-0">Surgical Video</h5>
+            <div class="flex flex-col p-2 bg-dark-900 border-b border-dark-700">
+              <div class="flex items-center mb-2">
+                <label class="mr-3 font-medium text-white text-sm flex items-center">
+                  <input type="radio" name="videoSourceType" id="videoSourceUploaded" value="uploaded" checked class="mr-1"> Uploaded Video
+                </label>
+                <label class="mr-3 font-medium text-white text-sm flex items-center">
+                  <input type="radio" name="videoSourceType" id="videoSourceLive" value="live"> Live Stream
+                </label>
+                <div id="liveStreamUrlContainer" class="ml-4 flex items-center" style="display: none;">
+                  <label for="liveStreamUrl" class="mr-2 text-sm text-gray-300">Server:</label>
+                  <input type="text" id="liveStreamUrl" class="p-1 px-2 rounded bg-dark-700 border border-dark-600 text-white text-sm w-48" value="http://localhost:8080">
+                  <button id="connectWebRTCBtn" class="ml-2 btn btn-sm px-3 py-1.5 rounded-lg bg-green-700 text-white hover:bg-green-600 transition-all duration-200 shadow-sm">
+                    <i class="fas fa-link mr-1"></i> Connect
+                  </button>
+                  <button id="disconnectWebRTCBtn" class="ml-2 btn btn-sm px-3 py-1.5 rounded-lg bg-red-700 text-white hover:bg-red-600 transition-all duration-200 shadow-sm" style="display: none;">
+                    <i class="fas fa-unlink mr-1"></i> Disconnect
+                  </button>
+                  <span id="webrtcStatus" class="ml-2 text-xs text-gray-400"></span>
+                </div>
               </div>
-              <div class="flex space-x-2">
-                <button class="btn btn-sm px-3 py-1.5 rounded-lg bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-500 hover:to-primary-600 text-white transition-all duration-200 shadow-sm" id="fullscreen-btn" onclick="toggleFullscreen()">
-                  <i class="fas fa-expand"></i>
-                </button>
-                <button class="btn btn-sm px-3 py-1.5 rounded-lg bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-500 hover:to-primary-600 text-white transition-all duration-200 shadow-sm" id="capture-frame-btn" onclick="captureAndStoreFrame()">
-                  <i class="fas fa-camera mr-1.5"></i> Capture
-                </button>
+              <div class="flex justify-between items-center">
+                <div class="flex items-center">
+                  <i class="fas fa-film text-primary-400 mr-2"></i>
+                  <h5 class="font-semibold m-0">Surgical Video</h5>
+                </div>
+                <div class="flex space-x-2">
+                  <button class="btn btn-sm px-3 py-1.5 rounded-lg bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-500 hover:to-primary-600 text-white transition-all duration-200 shadow-sm" id="fullscreen-btn" onclick="toggleFullscreen()">
+                    <i class="fas fa-expand"></i>
+                  </button>
+                  <button class="btn btn-sm px-3 py-1.5 rounded-lg bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-500 hover:to-primary-600 text-white transition-all duration-200 shadow-sm" id="capture-frame-btn" onclick="captureAndStoreFrame()">
+                    <i class="fas fa-camera mr-1.5"></i> Capture
+                  </button>
+                </div>
               </div>
             </div>
-            <video id="surgery-video" class="w-full" style="max-height: 55vh;" controls muted>
+            <!-- Single video element used for both uploaded videos and live streams -->
+            <video id="surgery-video" class="w-full" style="max-height: 55vh;" controls muted autoplay playsinline>
               <source src="" type="video/mp4">
               Your browser does not support the video tag.
             </video>
