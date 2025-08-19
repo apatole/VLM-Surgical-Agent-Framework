@@ -55,6 +55,34 @@ class Agent(ABC):
             self.agent_settings = full_config[agent_key]
         else:
             self.agent_settings = full_config
+
+        # Optional overrides for model_name and llm_url via environment variables and a global YAML
+        # Precedence: ENV > agent-specific config > global.yaml > default
+        # ENV keys:
+        #   model_name: VLLM_MODEL_NAME
+        #   llm_url:    VLLM_URL
+        # Global YAML path: $VLLM_GLOBAL_CONFIG, else <settings_dir>/global.yaml
+        # Defaults: model_name='llama3.2', llm_url='http://localhost:8000/v1'
+        global_cfg: dict = {}
+        try:
+            # Allow custom path via env, otherwise look next to the agent settings file
+            env_global_cfg_path = os.environ.get("VLLM_GLOBAL_CONFIG")
+            candidate_paths = []
+            if env_global_cfg_path:
+                candidate_paths.append(env_global_cfg_path)
+            candidate_paths.append(os.path.join(os.path.dirname(settings_path), "global.yaml"))
+            for cfg_path in candidate_paths:
+                if cfg_path and os.path.isfile(cfg_path):
+                    with open(cfg_path, 'r') as gf:
+                        global_cfg = yaml.safe_load(gf) or {}
+                    break
+        except Exception as e:
+            # Non-fatal: proceed without global config
+            self._logger.debug(f"No global config loaded: {e}")
+
+        env_model_name = os.environ.get("VLLM_MODEL_NAME")
+        env_llm_url = os.environ.get("VLLM_URL")
+
         self.description = self.agent_settings.get('description', '')
         self.max_prompt_tokens = self.agent_settings.get('max_prompt_tokens', 3000)
         self.ctx_length = self.agent_settings.get('ctx_length', 2048)
@@ -64,11 +92,27 @@ class Agent(ABC):
         self.bot_rule_prefix = self.agent_settings.get('bot_rule_prefix', '')
         self.end_token = self.agent_settings.get('end_token', '')
         self.grammar = self.agent_settings.get('grammar', None)
-        self.model_name = self.agent_settings.get('model_name', 'llama3.2')
+
+        self._logger.debug(
+            f"Agent config ENV VARS. model_name={env_model_name}"
+        )
+        self.model_name = (
+            env_model_name
+            or self.agent_settings.get('model_name')
+            or (global_cfg.get('model_name') if isinstance(global_cfg, dict) else None)
+            or 'llama3.2'
+        )
         self.publish_settings = self.agent_settings.get('publish', {})
-        self.llm_url = self.agent_settings.get('llm_url', "http://localhost:8000/v1")
+        self.llm_url = (
+            env_llm_url
+            or self.agent_settings.get('llm_url')
+            or (global_cfg.get('llm_url') if isinstance(global_cfg, dict) else None)
+            or "http://localhost:8000/v1"
+        )
         self.tools = self.agent_settings.get('tools', {})
-        self._logger.debug(f"Agent config loaded. llm_url={self.llm_url}, model_name={self.model_name}")
+        self._logger.debug(
+            f"Agent config loaded. llm_url={self.llm_url}, model_name={self.model_name}"
+        )
 
     def _wait_for_server(self, timeout=60):
         attempts = 0
