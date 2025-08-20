@@ -93,9 +93,7 @@ grammar: |
       "timeline"
     ]
   }
-
-model_name: "models/llm/Llama-3.2-11B-Vision-Surgical-CholecT50"
-llm_url: "http://127.0.0.1:8000/v1"
+ 
 
 publish:
   ags:

@@ -44,6 +44,31 @@ fi
 echo -e "${BLUE}🏥 VLM Surgical Agent Framework Setup${NC}"
 echo -e "${BLUE}======================================${NC}"
 
+# Function to get model name following precedence: ENV > global.yaml > default
+get_model_name() {
+    # First check environment variable
+    if [ -n "$VLLM_MODEL_NAME" ]; then
+        echo "$VLLM_MODEL_NAME"
+        return
+    fi
+
+    # Then check global.yaml
+    local global_config="${REPO_PATH}/configs/global.yaml"
+    if [ -f "$global_config" ]; then
+        # Extract quoted model_name from valid YAML (expects quoted values)
+        local model_name=$(grep "^model_name:" "$global_config" | \
+                          sed 's/^model_name:[[:space:]]*//' | \
+                          sed 's/^"//' | sed 's/"$//')
+        if [ -n "$model_name" ]; then
+            echo "$model_name"
+            return
+        fi
+    fi
+
+    # Finally use hardcoded default
+    echo "models/llm/Llama-3.2-11B-Vision-Surgical-CholecT50"
+}
+
 # Function to check if Docker is running
 check_docker() {
     if ! docker info >/dev/null 2>&1; then
@@ -53,8 +78,8 @@ check_docker() {
     echo -e "${GREEN}✅ Docker is running${NC}"
 }
 
-# Function to download the surgical LLM model
-download_surgical_model() {
+# Function to download the NVIDIA Llama-3.2-11B-Vision-Surgical-CholecT50 model
+download_nvidia_llama_model() {
     local model_dir="${REPO_PATH}/models/llm/Llama-3.2-11B-Vision-Surgical-CholecT50"
 
     echo -e "\n${BLUE}📥 Downloading NVIDIA Llama-3.2-11B-Vision-Surgical-CholecT50 model...${NC}"
@@ -88,22 +113,30 @@ download_surgical_model() {
         echo -e "${RED}❌ Failed to download model${NC}"
         return 1
     fi
+
 }
 
-# Function to check if surgical model exists and download if needed
-ensure_surgical_model() {
-    local model_dir="${REPO_PATH}/models/llm/Llama-3.2-11B-Vision-Surgical-CholecT50"
+# Function to check if NVIDIA Llama model exists and download if needed
+ensure_nvidia_llama_model() {
+    local model_name=$(get_model_name)
+    local model_dir="${REPO_PATH}/${model_name}"
     local model_config="${model_dir}/config.json"
 
-    if [ -f "$model_config" ]; then
-        echo -e "${GREEN}✅ Surgical model found at $model_dir${NC}"
+    # Currently this function only handles downloading
+    # NVIDIA/Llama-3.2-11B-Vision-Surgical-CholecT50 model from Hugging Face.
+    if [[ "$model_name" != *"Llama-3.2-11B-Vision-Surgical-CholecT50"* ]]; then
         return 0
-    else
-        echo -e "${YELLOW}⚠️  Surgical model not found at $model_dir${NC}"
-        echo -e "${BLUE}📥 Will download the model now...${NC}"
-        download_surgical_model
-        return $?
     fi
+
+    if [ -f "$model_config" ]; then
+        echo -e "${GREEN}✅ NVIDIA Llama surgical model found at $model_dir${NC}"
+        return 0
+    fi
+
+    echo -e "${YELLOW}⚠️  NVIDIA Llama surgical model not found at $model_dir${NC}"
+    echo -e "${BLUE}📥 Will download the model now...${NC}"
+    download_nvidia_llama_model
+    return $?
 }
 
 # Function to build vLLM
@@ -214,9 +247,9 @@ stop_containers() {
 run_vllm() {
     echo -e "\n${BLUE}🚀 Starting vLLM Server...${NC}"
 
-    # Ensure the surgical model is available
-    if ! ensure_surgical_model; then
-        echo -e "${RED}❌ Failed to ensure surgical model is available. Cannot start vLLM server.${NC}"
+    # Ensure the NVIDIA Llama surgical model is available (if needed)
+    if ! ensure_nvidia_llama_model; then
+        echo -e "${RED}❌ Failed to ensure NVIDIA Llama surgical model is available. Cannot start vLLM server.${NC}"
         return 1
     fi
 
@@ -232,14 +265,20 @@ run_vllm() {
         echo -e "${BLUE}💡 Using enforce eager mode${NC}"
     fi
 
+    # Get model name following precedence: ENV > global.yaml > default
+    local model_name=$(get_model_name)
+    echo -e "${BLUE}💡 Using model: $model_name${NC}"
+
     docker run -d \
         --name vlm-surgical-vllm \
         --net host \
         --gpus all \
         -v ${REPO_PATH}/models:/vllm-workspace/models \
+        -e VLLM_MODEL_NAME \
+        -e VLLM_URL \
         --restart unless-stopped \
         $VLLM_IMAGE \
-        --model models/llm/Llama-3.2-11B-Vision-Surgical-CholecT50 \
+        --model $model_name \
         --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION} \
         ${ENFORCE_EAGER_FLAG} \
         --max-model-len 4096 \
@@ -270,6 +309,8 @@ run_ui() {
     docker run -d \
         --name vlm-surgical-ui \
         --net host \
+        -e VLLM_MODEL_NAME \
+        -e VLLM_URL \
         --restart unless-stopped \
         vlm-surgical-agents:ui
     echo -e "${GREEN}✅ UI Server started${NC}"
