@@ -8,7 +8,7 @@ The Surgical Agentic Framework Demo is a multimodal agentic AI framework tailore
     *   NotetakerAgent to record specific notes,
     *   AnnotationAgent to automatically annotate progress in the background,
     *   PostOpNoteAgent to summarize all data into a final post-operative note.
-* **(Optional) Text-to-Speech**: The system can speak back the AI's response if you enable TTS (ElevenLabs is implemented, but any local TTS could be implemented as well).
+* **Text-to-Speech**: The system can speak back the AI's response if you enable TTS. There are options for local TTS models (Coqui), as well as an ElevenLabs API.
 * **Computer Vision** or multimodal features are supported via a finetuned VLM (Vision Language Model), launched by vLLM.
 * **Video Upload and Processing**: Support for uploading and analyzing surgical videos.
 * **Post-Operation Note Generation**: Automatic generation of structured post-operative notes based on the procedure data.
