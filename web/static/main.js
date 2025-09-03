@@ -504,14 +504,7 @@ function addNote(noteText, userMessage) {
   const notesContainer = document.getElementById('notes-container');
   const noNotesMsg = notesContainer.querySelector('.text-center');
 
-  // Check if this note already exists to prevent duplicates
-  const existingNotes = notesContainer.querySelectorAll('.note-content');
-  for (let i = 0; i < existingNotes.length; i++) {
-    if (existingNotes[i].textContent.trim() === noteText.trim()) {
-      console.log("Duplicate note detected, not adding again");
-      return; // Exit if duplicate found
-    }
-  }
+  // Duplicate detection will happen after extracting the final content
 
   // Remove "no notes" message if it exists
   if (noNotesMsg) {
@@ -529,62 +522,54 @@ function addNote(noteText, userMessage) {
   // Get current video time if available
   const currentVideo = document.getElementById('surgery-video');
 
-  // Extract title and content with improved parsing
+  // Robust extraction: always put the actual note text into the content field
   let title = 'Note';
-  let content = noteText;
+  let content = '';
   let category = 'General';
 
-  // Process AI response for note content
-  if (noteText.toLowerCase().includes('note:')) {
-    // Case: AI returned a formatted note
-    const noteMatch = noteText.match(/note:([^$]+)/i);
-    if (noteMatch && noteMatch[1]) {
-      content = noteMatch[1].trim();
-
-      // Try to extract a title from the first sentence
-      const firstSentence = content.split(/[.!?]/, 1)[0].trim();
-      if (firstSentence && firstSentence.length < 50) {
-        title = firstSentence;
-        // Remove the title from the content if it's at the beginning
-        content = content.replace(firstSentence, '').trim();
-        if (content.startsWith('.') || content.startsWith('!') || content.startsWith('?')) {
-          content = content.substring(1).trim();
-        }
-      }
+  // 1) Prefer the user's original message (strip the directive)
+  if (userMessage) {
+    const cleanedUser = userMessage
+      .replace(/^\s*(?:take|make)\s+(?:a\s+)?note\b\s*(?:about|on|regarding|that)?\s*[:,-]?\s*/i, '')
+      .trim();
+    if (cleanedUser) {
+      content = cleanedUser;
     }
-  } 
+  }
 
-  // Handle user's "take a note" command - prioritize this over AI response
-  if (userMessage && userMessage.toLowerCase().includes('take a note')) {
-    // Extract the note content from the user's message
-    const noteMatch = userMessage.match(/take a note(?: about| on| regarding)? (.+)/i);
-    if (noteMatch && noteMatch[1]) {
-      // Use the user's topic as the title
-      title = noteMatch[1].trim();
-
-      // Extract meaningful content from the AI response
-      if (noteText && !noteText.toLowerCase().includes('note recorded') && !noteText.toLowerCase().includes('timestamp=')) {
-        // If AI provided actual useful content, use it
-        content = noteText;
-      } else {
-        // If AI didn't provide useful content, create a meaningful note based on user's request
-        const currentVideo = document.getElementById('surgery-video');
-        const currentTime = currentVideo ? formatTime(currentVideo.currentTime) : timeString;
-
-        // Generate useful note content based on topic
-        if (title.toLowerCase().includes('bleed')) {
-          content = `Bleeding observed at ${currentTime}. Patient requires attention to the affected area.`;
-        } else if (title.toLowerCase().includes('tool') || title.toLowerCase().includes('instrument')) {
-          content = `Tool usage noted at ${currentTime}. Proper technique observed.`;
-        } else if (title.toLowerCase().includes('anatomy') || title.toLowerCase().includes('structure')) {
-          content = `Anatomical structure identified at ${currentTime}. Clear visualization achieved.`;
-        } else if (title.toLowerCase().includes('phase') || title.toLowerCase().includes('stage')) {
-          content = `Procedure phase change at ${currentTime}. Moving to next steps.`;
-        } else {
-          content = `Observation at ${currentTime}: ${title} noted during procedure.`;
-        }
-      }
+  // 2) If still empty, prefer explicit "Note:" content from the agent response
+  if (!content) {
+    const agentNoteMatch = (noteText || '').match(/note\s*:\s*([\s\S]+)/i);
+    if (agentNoteMatch && agentNoteMatch[1]) {
+      content = agentNoteMatch[1].trim();
     }
+  }
+
+  // 3) If still empty, clean meta wrappers from noteText
+  if (!content) {
+    let cleaned = (noteText || '').replace(/Note recorded[^.]*\./i, '').trim();
+    cleaned = cleaned.replace(/Total notes[^.]*\./i, '').trim();
+    cleaned = cleaned.replace(/^Note\s*:\s*/i, '').trim();
+    if (cleaned) {
+      content = cleaned;
+    }
+  }
+
+  // 4) Final fallback: synthesize from time if we have nothing
+  if (!content) {
+    const currentTime = currentVideo ? formatTime(currentVideo.currentTime) : timeString;
+    if (userMessage) {
+      const fallbackClean = userMessage.replace(/^\s*(?:take|make)\s+(?:a\s+)?note\b\s*/i, '').trim();
+      content = fallbackClean ? `Observation at ${currentTime}: ${fallbackClean}` : `Observation at ${currentTime}.`;
+    } else {
+      content = `Observation at ${currentTime}.`;
+    }
+  }
+
+  // Compute a concise title but keep full content
+  const firstSentence = content.split(/[.!?]/, 1)[0].trim();
+  if (firstSentence) {
+    title = firstSentence.length <= 60 ? firstSentence : (firstSentence.slice(0, 57) + '…');
   }
 
   // Determine category based on content keywords
@@ -596,6 +581,15 @@ function addNote(noteText, userMessage) {
     category = 'Anatomy';
   } else if (content.toLowerCase().includes('procedure') || content.toLowerCase().includes('technique')) {
     category = 'Procedure';
+  }
+
+  // Second duplicate guard based on the extracted content (more reliable)
+  const existingByContent = notesContainer.querySelectorAll('.note-content');
+  for (let i = 0; i < existingByContent.length; i++) {
+    if (existingByContent[i].textContent.trim() === content.trim()) {
+      console.log("Duplicate note content detected, not adding again");
+      return;
+    }
   }
 
   noteElement.innerHTML = `

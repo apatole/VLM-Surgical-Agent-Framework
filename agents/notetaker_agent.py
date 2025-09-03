@@ -76,9 +76,11 @@ class NotetakerAgent(Agent):
         self.notes.append(note)
         self.append_json_to_file(note, self.notes_filepath)
 
+        # Include the actual note content in the response so the UI can display it
         response = (
             f"Note recorded (timestamp={timestamp_str}). "
-            f"Total notes so far: {len(self.notes)}."
+            f"Total notes so far: {len(self.notes)}. "
+            f"Note: {user_text}"
         )
         return {
             "name": "NotetakerAgent",

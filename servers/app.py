@@ -172,9 +172,12 @@ IMPORTANT: This is a TEXT-ONLY SUMMARY request. Do not attempt to identify instr
 
                 # Check if this is from the NotetakerAgent to tag it for the UI
                 if selected_agent_name == "NotetakerAgent":
+                    # Pass along the original user input so the UI can infer note content/title
                     web.send_message({
                         "agent_response": response_data["response"],
-                        "is_note": True
+                        "is_note": True,
+                        "original_user_input": payload.get('original_user_input', user_text),
+                        "user_input": corrected_text,
                     })
                 else:
                     # Send result to UI
