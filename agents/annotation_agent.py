@@ -15,17 +15,18 @@ import logging
 import os
 import json
 import queue
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 from .base_agent import Agent
 
 class SurgeryAnnotation(BaseModel):
-    timestamp: str
-    elapsed_time_seconds: float
     tools: List[str]
     anatomy: List[str]
     surgical_phase: str
     description: str
+    # These are populated post-parse by the agent:
+    timestamp: Optional[str] = None
+    elapsed_time_seconds: Optional[float] = None
 
 class AnnotationAgent(Agent):
     def __init__(self, settings_path, response_handler, frame_queue, agent_key=None, procedure_start_str=None):
@@ -122,7 +123,16 @@ class AnnotationAgent(Agent):
         messages = []
         if self.agent_prompt:
             messages.append({"role": "system", "content": self.agent_prompt})
-        user_content = "Please produce an annotation of the surgical scene based on the provided image, following the required schema."
+        # Strong, explicit instruction for JSON shape to battle model drift
+        user_content = (
+            "Analyze the attached surgical image and return ONLY a JSON object with EXACTLY these keys: "
+            "tools (array), anatomy (array), surgical_phase (string), description (string). "
+            "Use only the allowed values: tools in [scissors, hook, clipper, grasper, bipolar, irrigator, none]; "
+            "anatomy in [gallbladder, cystic_duct, cystic_artery, omentum, liver, blood_vessel, abdominal_wall, peritoneum, gut, specimen_bag, none]; "
+            "surgical_phase in [preparation, calots_triangle_dissection, clipping_and_cutting, gallbladder_dissection, gallbladder_packaging, cleaning_and_coagulation, gallbladder_extraction]. "
+            "Use underscores (e.g., clipping_and_cutting), never hyphens. "
+            "If nothing is visible for tools or anatomy, use ['none'] for that field."
+        )
         messages.append({"role": "user", "content": user_content})
         
         # Create a fallback annotation in case of errors
@@ -141,14 +151,7 @@ class AnnotationAgent(Agent):
             return None
             
         try:
-            # Parse the grammar specification 
-            try:
-                guided_params = {"guided_json": json.loads(self.grammar)}
-            except json.JSONDecodeError as e:
-                self._logger.error(f"Invalid JSON grammar: {e}")
-                return fallback_annotation
-                
-            # Try to get a response from the model with retries
+            # Try to get a response from the model with retries, using JSON Schema via response_format
             max_retries = 2
             retry_count = 0
             raw_json_str = None
@@ -160,7 +163,7 @@ class AnnotationAgent(Agent):
                         image_b64=frame_data,
                         temperature=0.3,
                         display_output=False,  # Don't show output to user
-                        extra_body=guided_params
+                        grammar=self.grammar,
                     )
                 except Exception as e:
                     retry_count += 1
@@ -176,24 +179,28 @@ class AnnotationAgent(Agent):
                 
             self._logger.debug(f"Raw annotation response: {raw_json_str}")
 
-            # Try to parse the response as valid JSON
+            # Robust parsing and normalization to handle model drift
             try:
-                parsed = SurgeryAnnotation.model_validate_json(raw_json_str)
-            except Exception as e:
-                self._logger.warning(f"Annotation parse error: {e}")
+                obj = json.loads(raw_json_str)
+            except Exception:
                 # Try to extract valid JSON if the response contains malformed output
                 try:
-                    # Look for JSON-like content between curly braces
                     import re
                     json_match = re.search(r'\{.*\}', raw_json_str, re.DOTALL)
                     if json_match:
-                        json_str = json_match.group(0)
-                        parsed = SurgeryAnnotation.model_validate_json(json_str)
+                        obj = json.loads(json_match.group(0))
                     else:
                         return fallback_annotation
                 except Exception:
                     self._logger.warning("Failed to extract valid JSON from response")
                     return fallback_annotation
+
+            try:
+                normalized = self._normalize_annotation_json(obj)
+                parsed = SurgeryAnnotation(**normalized)
+            except Exception as e:
+                self._logger.warning(f"Annotation parse error after normalization: {e}")
+                return fallback_annotation
 
             # Create the annotation dict with timestamp
             annotation_dict = parsed.dict()
@@ -217,3 +224,98 @@ class AnnotationAgent(Agent):
         self.stop_event.set()
         self._logger.info("Stopping AnnotationAgent background thread.")
         self.thread.join()
+
+    # --- helpers ---
+    def _normalize_annotation_json(self, data: dict) -> dict:
+        """
+        Map various likely model outputs into the expected schema fields and values.
+        Accepts keys like 'Tools', 'Anatomies', 'Phase', etc., and normalizes
+        values (lower‑case, underscores, enums). Ensures required fields exist.
+        """
+        # Allowed enums per config
+        tools_enum = {"scissors", "hook", "clipper", "grasper", "bipolar", "irrigator", "none"}
+        anatomy_enum = {
+            "gallbladder", "cystic_duct", "cystic_artery", "omentum", "liver",
+            "blood_vessel", "abdominal_wall", "peritoneum", "gut", "specimen_bag", "none"
+        }
+        phase_enum = {
+            "preparation",
+            "calots_triangle_dissection",
+            "clipping_and_cutting",
+            "gallbladder_dissection",
+            "gallbladder_packaging",
+            "cleaning_and_coagulation",
+            "gallbladder_extraction",
+        }
+
+        # Key normalization: accept alternatives
+        def get_any(d, keys, default=None):
+            for k in keys:
+                if k in d:
+                    return d[k]
+            return default
+
+        raw_tools = get_any(data, ["tools", "Tools", "tool", "Tool", "instruments", "Instruments"], [])
+        raw_anatomy = get_any(data, ["anatomy", "Anatomy", "anatomies", "Anatomies", "structures", "Structures"], [])
+        raw_phase = get_any(data, ["surgical_phase", "SurgicalPhase", "Surgical_Phase", "Phase", "phase"], "preparation")
+        raw_desc = get_any(data, ["description", "Description", "desc", "Desc"], None)
+
+        # Normalize lists
+        def to_list(v):
+            if v is None:
+                return []
+            if isinstance(v, list):
+                return v
+            return [v]
+
+        tools_list = [str(x).strip().lower() for x in to_list(raw_tools)]
+        anatomy_list = [str(x).strip().lower() for x in to_list(raw_anatomy)]
+
+        # Map common synonyms
+        synonym_map_tools = {"forceps": "grasper", "grasper": "grasper", "clip-applier": "clipper"}
+        tools_list = [synonym_map_tools.get(x, x) for x in tools_list]
+
+        # Enforce enums; if empty, use ['none']
+        tools_list = [x for x in tools_list if x in tools_enum]
+        if not tools_list:
+            tools_list = ["none"]
+
+        anatomy_list = [x.replace(" ", "_") for x in anatomy_list]
+        anatomy_list = [x for x in anatomy_list if x in anatomy_enum]
+        if not anatomy_list:
+            anatomy_list = ["none"]
+
+        # Normalize phase: lower, replace hyphens/spaces with underscores
+        phase = str(raw_phase).strip().lower().replace("-", "_").replace(" ", "_")
+        if phase not in phase_enum:
+            # Try some heuristic corrections
+            if "clip" in phase and "cut" in phase:
+                phase = "clipping_and_cutting"
+            elif "calot" in phase or "triangle" in phase:
+                phase = "calots_triangle_dissection"
+            elif "pack" in phase:
+                phase = "gallbladder_packaging"
+            elif "dissect" in phase and "gallbladder" in phase:
+                phase = "gallbladder_dissection"
+            elif "clean" in phase or "coag" in phase:
+                phase = "cleaning_and_coagulation"
+            elif "extract" in phase:
+                phase = "gallbladder_extraction"
+            else:
+                phase = "preparation"
+
+        # Description: if missing, synthesize a concise one
+        description = raw_desc
+        if not isinstance(description, str) or not description.strip():
+            # Attempt simple synthesis
+            if tools_list and anatomy_list and tools_list != ["none"] and anatomy_list != ["none"]:
+                description = f"{tools_list[0]} interacting with {anatomy_list[0]}"
+            else:
+                description = "Scene reviewed; limited identifiable details"
+
+        return {
+            "tools": sorted(list(dict.fromkeys(tools_list))),
+            "anatomy": sorted(list(dict.fromkeys(anatomy_list))),
+            "surgical_phase": phase,
+            "description": description.strip(),
+        }

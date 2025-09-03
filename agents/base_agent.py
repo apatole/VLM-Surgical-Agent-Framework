@@ -149,12 +149,30 @@ class Agent(ABC):
                 f"Sending chat request to vLLM/OpenAI client. Model={self.model_name}, temperature={temperature}\nUser message:\n{user_message[:500]}"
             )
             try:
-                completion = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=request_messages,
-                    temperature=temperature,
-                    max_tokens=self.ctx_length
-                )
+                request_kwargs = {
+                    "model": self.model_name,
+                    "messages": request_messages,
+                    "temperature": temperature,
+                    "max_tokens": self.ctx_length,
+                }
+                # If a JSON schema grammar is provided, use OpenAI-compatible response_format
+                if grammar:
+                    try:
+                        schema_dict = json.loads(grammar) if isinstance(grammar, str) else grammar
+                        request_kwargs["response_format"] = {
+                            "type": "json_schema",
+                            "json_schema": {
+                                "name": "structured_output",
+                                "schema": schema_dict,
+                                "strict": True,
+                            },
+                        }
+                        # Also include vLLM-specific guided_json for broader compatibility
+                        request_kwargs["extra_body"] = {"guided_json": schema_dict}
+                    except Exception as e:
+                        self._logger.error(f"Failed to parse grammar for response_format: {e}")
+
+                completion = self.client.chat.completions.create(**request_kwargs)
                 response_text = completion.choices[0].message.content if completion.choices else ""
                 if display_output and self.response_handler:
                     self.response_handler.add_response(response_text)
@@ -226,7 +244,24 @@ class Agent(ABC):
             "temperature": temperature,
             "max_tokens": self.ctx_length,
         }
-        if extra_body is not None:
+        # Prefer modern response_format if grammar provided; fallback to extra_body passthrough
+        if grammar:
+            try:
+                schema_dict = json.loads(grammar) if isinstance(grammar, str) else grammar
+                request_kwargs["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "structured_output",
+                        "schema": schema_dict,
+                        "strict": True,
+                    },
+                }
+                # Also include vLLM-specific guided_json for broader compatibility
+                request_kwargs["extra_body"] = {"guided_json": schema_dict}
+            except Exception as e:
+                self._logger.error(f"Failed to parse grammar for response_format (image): {e}")
+        elif extra_body is not None:
+            # Backward compatibility: allow callers to pass extra vLLM-specific knobs
             request_kwargs["extra_body"] = extra_body
 
         self._logger.debug("Multimodal chat request (%s)…", self.model_name)

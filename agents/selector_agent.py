@@ -40,13 +40,23 @@ class SelectorAgent(Agent):
         self._logger.debug(f"SelectorAgent calling vLLM with user text: {text}")
 
         try:
-            guided_params = {"guided_json": json.loads(self.grammar)}
+            # Use OpenAI-compatible response_format with a JSON schema
+            schema = json.loads(self.grammar) if isinstance(self.grammar, str) else self.grammar
+            response_format = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "selector_output",
+                    "schema": schema,
+                    "strict": True,
+                },
+            }
             result = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=messages,
                 temperature=0,
                 max_tokens=self.ctx_length,
-                extra_body=guided_params
+                response_format=response_format,
+                extra_body={"guided_json": schema},
             )
             raw_json_str = result.choices[0].message.content
             self._logger.debug(f"Raw JSON from vLLM: {raw_json_str}")
