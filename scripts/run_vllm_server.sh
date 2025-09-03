@@ -24,6 +24,9 @@ PORT=${PORT:-8000}
 MODEL_NAME="$(basename "${MODEL_REPO}")"
 MODEL_PATH="${MODEL_DIR}/${MODEL_NAME}"
 
+# Kill on exit (graceful shutdown)
+trap 'echo "[run_vllm_server.sh] Shutting down…"; pkill -P $$ || true' EXIT
+
 if [[ ! -d "${MODEL_PATH}" ]]; then
   echo "[run_vllm_server.sh] Model not found at ${MODEL_PATH}"
   echo "[run_vllm_server.sh] Downloading with huggingface‑cli …"
@@ -50,7 +53,7 @@ python -m vllm.entrypoints.openai.api_server \
     --model "${MODEL_PATH}" \
     --port "${PORT}" \
     --max-model-len "8192" \
-    --max-num-seqs "4" \
+    --max-num-seqs "1" \
     --disable-mm-preprocessor-cache \
     --load-format "bitsandbytes" \
     --quantization "bitsandbytes" \

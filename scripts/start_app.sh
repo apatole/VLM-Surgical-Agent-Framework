@@ -10,10 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+set -euo pipefail
 LMM_LOG_FILE="${LMM_LOG_FILE:-./surgical_agentic_framework.log}"
 
 # Trap SIGINT and kill all processes in the group
-trap 'kill 0' EXIT INT
+trap 'echo "[run_vllm_server.sh] Caught exit; killing children..."; pkill -P $$ || true' EXIT
 
 # Build CSS first if NPM is available
 if command -v npm &> /dev/null
@@ -37,7 +38,7 @@ check_vllm_server() {
 
 # Wait for vLLM server to be ready with active polling
 echo "Waiting for vLLM server to initialize..."
-MAX_WAIT_TIME=240  # Maximum wait of 3 minutes
+MAX_WAIT_TIME=480  # Maximum wait of 6 minutes
 CHECK_INTERVAL=3   # Check every 3 seconds
 ELAPSED_TIME=0
 
