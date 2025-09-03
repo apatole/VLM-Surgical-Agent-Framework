@@ -380,6 +380,20 @@ function handleServerMessage(message) {
     }
   }
 
+  // Handle structured post-op note sent over WebSocket (voice-triggered flow)
+  if (message.post_op_note) {
+    try {
+      renderPostOpNote(message.post_op_note);
+      // Switch to Summary tab to show the result
+      const summaryTabBtn = document.getElementById('summary-tab');
+      if (summaryTabBtn) summaryTabBtn.click();
+      showToast('Post‑op note generated and rendered in Summary tab', 'success');
+    } catch (e) {
+      console.error('Error rendering post-op note from WebSocket:', e);
+      showToast('Error displaying post‑op note', 'error');
+    }
+  }
+
   // Handle video updates
   if (message.video_updated && message.video_src) {
     // Stop only TTS audio playback when video is updated (don't reset connection)
@@ -428,6 +442,166 @@ function handleServerMessage(message) {
   if (message.request_frame) {
     sendFrameWithText(message.recognized_text);
   }
+}
+
+// Render a post‑op note JSON into the Summary tab. Supports both new and legacy shapes.
+function renderPostOpNote(postOpNote) {
+  const container = document.getElementById('summary-container');
+  if (!container) return;
+
+  // Helper to format duration seconds
+  function fmtDuration(sec) {
+    if (sec == null) return 'Not specified';
+    const s = Math.max(0, parseInt(sec, 10));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const r = s % 60;
+    return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${r.toString().padStart(2,'0')}`;
+  }
+
+  // Detect new grammar (flat keys) vs legacy structure
+  const isNew = !!postOpNote.date_time || !!postOpNote.personnel || !!postOpNote.timeline;
+
+  let html = '';
+  if (isNew) {
+    const procType = postOpNote.procedure_type || 'Not specified';
+    const dateTime = postOpNote.date_time || 'Not specified';
+    const nature = postOpNote.procedure_nature || 'unknown';
+    const personnel = postOpNote.personnel || {};
+    const surgeon = personnel.surgeon || 'Not specified';
+    const assistant = personnel.assistant || 'Not specified';
+    const anaesthetist = personnel.anaesthetist || 'Not specified';
+
+    // Derive a duration if phase_summary present
+    let durationStr = 'Not specified';
+    const phaseSummary = postOpNote.phase_summary || [];
+    if (Array.isArray(phaseSummary) && phaseSummary.length) {
+      const total = phaseSummary.reduce((acc, p) => acc + (typeof p.duration_seconds === 'number' ? p.duration_seconds : 0), 0);
+      if (total > 0) durationStr = fmtDuration(total);
+    }
+
+    html += `
+      <div class="p-4 border border-dark-700 rounded-lg">
+        <h3 class="text-lg font-semibold mb-2 text-primary-400">Procedure Information</h3>
+        <div class="space-y-2">
+          <p class="text-sm"><span class="font-medium text-gray-400">Type:</span> ${procType}</p>
+          <p class="text-sm"><span class="font-medium text-gray-400">Date/Time:</span> ${dateTime}</p>
+          <p class="text-sm"><span class="font-medium text-gray-400">Nature:</span> ${nature}</p>
+          <p class="text-sm"><span class="font-medium text-gray-400">Duration:</span> ${durationStr}</p>
+          <p class="text-sm"><span class="font-medium text-gray-400">Surgeon:</span> ${surgeon}</p>
+          <p class="text-sm"><span class="font-medium text-gray-400">Assistant:</span> ${assistant}</p>
+          <p class="text-sm"><span class="font-medium text-gray-400">Anaesthetist:</span> ${anaesthetist}</p>
+        </div>
+      </div>
+    `;
+
+    // Findings (string)
+    if (postOpNote.findings && String(postOpNote.findings).trim()) {
+      html += `
+        <div class="p-4 border border-dark-700 rounded-lg mt-4">
+          <h3 class="text-lg font-semibold mb-2 text-primary-400">Findings</h3>
+          <p class="text-sm text-gray-300">${postOpNote.findings}</p>
+        </div>
+      `;
+    }
+
+    // Complications (string)
+    if (postOpNote.complications && String(postOpNote.complications).trim()) {
+      html += `
+        <div class="p-4 border border-dark-700 rounded-lg mt-4">
+          <h3 class="text-lg font-semibold mb-2 text-primary-400">Complications</h3>
+          <p class="text-sm text-gray-300">${postOpNote.complications}</p>
+        </div>
+      `;
+    }
+
+    // Prophylaxis and EBL
+    html += `
+      <div class="p-4 border border-dark-700 rounded-lg mt-4">
+        <h3 class="text-lg font-semibold mb-2 text-primary-400">Perioperative Details</h3>
+        <div class="space-y-1 text-sm">
+          <p><span class="font-medium text-gray-400">Estimated blood loss:</span> ${postOpNote.blood_loss_estimate || 'Not specified'}</p>
+          <p><span class="font-medium text-gray-400">DVT prophylaxis:</span> ${postOpNote.dvt_prophylaxis || 'Not specified'}</p>
+          <p><span class="font-medium text-gray-400">Antibiotic prophylaxis:</span> ${postOpNote.antibiotic_prophylaxis || 'Not specified'}</p>
+          <p><span class="font-medium text-gray-400">Post‑op instructions:</span> ${postOpNote.postoperative_instructions || 'Not specified'}</p>
+        </div>
+      </div>
+    `;
+
+    // Phase summary
+    if (Array.isArray(phaseSummary) && phaseSummary.length) {
+      html += `
+        <div class="p-4 border border-dark-700 rounded-lg mt-4">
+          <h3 class="text-lg font-semibold mb-2 text-primary-400">Phase Summary</h3>
+          <ul class="list-disc list-inside space-y-1 text-sm">
+            ${phaseSummary.map(p => `<li>${p.phase}: ${p.start_time || 'Unknown'} (${p.duration || 'Not specified'})</li>`).join('')}
+          </ul>
+        </div>
+      `;
+    }
+
+    // Timeline (event)
+    const timeline = Array.isArray(postOpNote.timeline) ? postOpNote.timeline : [];
+    if (timeline.length) {
+      html += `
+        <div class="p-4 border border-dark-700 rounded-lg mt-4">
+          <h3 class="text-lg font-semibold mb-2 text-primary-400">Procedure Timeline</h3>
+          <ul class="list-disc list-inside space-y-1 text-sm">
+            ${timeline.map(ev => `<li><span class='font-medium text-primary-300'>${ev.time || 'Unknown'}</span>: ${ev.event || ''}</li>`).join('')}
+          </ul>
+        </div>
+      `;
+    }
+  } else {
+    // Legacy shape (procedure_information, findings[], procedure_timeline[], complications[])
+    const info = postOpNote.procedure_information || {};
+    html += `
+      <div class="p-4 border border-dark-700 rounded-lg">
+        <h3 class="text-lg font-semibold mb-2 text-primary-400">Procedure Information</h3>
+        <div class="space-y-2">
+          <p class="text-sm"><span class="font-medium text-gray-400">Type:</span> ${info.procedure_type || 'Not specified'}</p>
+          <p class="text-sm"><span class="font-medium text-gray-400">Date:</span> ${info.date || 'Not specified'}</p>
+          <p class="text-sm"><span class="font-medium text-gray-400">Duration:</span> ${info.duration || 'Not specified'}</p>
+          <p class="text-sm"><span class="font-medium text-gray-400">Surgeon:</span> ${info.surgeon || 'Not specified'}</p>
+        </div>
+      </div>
+    `;
+    const findings = Array.isArray(postOpNote.findings) ? postOpNote.findings : [];
+    if (findings.length) {
+      html += `
+        <div class="p-4 border border-dark-700 rounded-lg mt-4">
+          <h3 class="text-lg font-semibold mb-2 text-primary-400">Key Findings</h3>
+          <ul class="list-disc list-inside space-y-1 text-sm">
+            ${findings.map(f => `<li>${f}</li>`).join('')}
+          </ul>
+        </div>
+      `;
+    }
+    const timeline = Array.isArray(postOpNote.procedure_timeline) ? postOpNote.procedure_timeline : [];
+    if (timeline.length) {
+      html += `
+        <div class="p-4 border border-dark-700 rounded-lg mt-4">
+          <h3 class="text-lg font-semibold mb-2 text-primary-400">Procedure Timeline</h3>
+          <ul class="list-disc list-inside space-y-1 text-sm">
+            ${timeline.map(ev => `<li><span class='font-medium text-primary-300'>${ev.time || 'Unknown'}</span>: ${ev.description || ''}</li>`).join('')}
+          </ul>
+        </div>
+      `;
+    }
+    const complications = Array.isArray(postOpNote.complications) ? postOpNote.complications : [];
+    if (complications.length) {
+      html += `
+        <div class="p-4 border border-dark-700 rounded-lg mt-4">
+          <h3 class="text-lg font-semibold mb-2 text-primary-400">Complications</h3>
+          <ul class="list-disc list-inside space-y-1 text-sm">
+            ${complications.map(c => `<li>${c}</li>`).join('')}
+          </ul>
+        </div>
+      `;
+    }
+  }
+
+  container.innerHTML = html;
 }
 
 // Function to add annotation to the annotations panel
@@ -2026,8 +2200,8 @@ function generateSummary() {
     console.log("Summary response:", data);
 
     if (data && data.post_op_note) {
-      // Now we're receiving raw JSON instead of HTML
-      displayFormattedPostOpNote(data.post_op_note, summaryContainer);
+      // Render structured note directly in the Summary tab
+      renderPostOpNote(data.post_op_note);
     } else if (data && data.summary) {
       // Backward compatibility with old API
       summaryContainer.innerHTML = `

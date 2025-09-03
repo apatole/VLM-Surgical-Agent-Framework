@@ -13,6 +13,8 @@ import os
 import json
 import math
 import logging
+import re
+from datetime import datetime
 from .base_agent import Agent
 
 class PostOpNoteAgent(Agent):
@@ -28,6 +30,26 @@ class PostOpNoteAgent(Agent):
                 self._logger.debug(f"Parsed grammar JSON schema: {self.schema_dict}")
             except json.JSONDecodeError as e:
                 self._logger.error(f"Failed to parse 'grammar' as JSON: {e}")
+        # Config defaults and mode flags
+        defaults = self.agent_settings.get("defaults", {}) or {}
+        self.default_procedure_type = defaults.get("procedure_type", "laparoscopic cholecystectomy")
+        self.default_procedure_nature = defaults.get("procedure_nature", "unknown")
+        default_personnel = defaults.get("personnel", {}) or {}
+        self.default_personnel = {
+            "surgeon": default_personnel.get("surgeon", "Not specified"),
+            "assistant": default_personnel.get("assistant", "Not specified"),
+            "anaesthetist": default_personnel.get("anaesthetist", "Not specified"),
+        }
+        mode = self.agent_settings.get("mode", {}) or {}
+        self.llm_assist_findings = bool(mode.get("llm_assist_findings", True))
+
+        # Smoothing and timeline options
+        smoothing = self.agent_settings.get("smoothing", {}) or {}
+        self.phase_min_dwell_seconds = int(smoothing.get("phase_min_dwell_seconds", 15))
+        self.phase_min_consecutive = int(smoothing.get("phase_min_consecutive", 2))
+        self.timeline_max_entries = int(smoothing.get("timeline_max_entries", 250))
+        self.include_phase_summary = bool(smoothing.get("include_phase_summary", True))
+        self.include_phase_details = bool(smoothing.get("include_phase_details", True))
 
     def process_request(self, input_data, chat_history, visual_info=None):
         return {
@@ -58,108 +80,38 @@ class PostOpNoteAgent(Agent):
             if not note_list:
                 self._logger.warning("No notetaker data found or unable to load notes")
                 
-            # Create default structure when data is missing
+            # Create default structure when data is missing (grammar-compliant)
             if not ann_list and not note_list:
                 self._logger.warning("Both annotation and notetaker data are missing or empty - creating default structure")
                 return {
-                    "procedure_information": {
-                        "procedure_type": "Not specified",
-                        "date": "Not specified",
-                        "duration": "Not specified",
-                        "surgeon": "Not specified"
+                    "date_time": "Not specified",
+                    "procedure_type": self.default_procedure_type,
+                    "procedure_nature": self.default_procedure_nature,
+                    "personnel": {
+                        "surgeon": self.default_personnel.get("surgeon", "Not specified"),
+                        "assistant": self.default_personnel.get("assistant", "Not specified"),
+                        "anaesthetist": self.default_personnel.get("anaesthetist", "Not specified"),
                     },
-                    "findings": ["No findings recorded"],
-                    "procedure_timeline": [],
-                    "complications": []
+                    "findings": "No findings recorded",
+                    "complications": "None recorded",
+                    "blood_loss_estimate": "Not specified",
+                    "dvt_prophylaxis": "Not specified",
+                    "antibiotic_prophylaxis": "Not specified",
+                    "postoperative_instructions": "Not specified",
+                    "timeline": []
                 }
                 
-            # Summarize annotations and notes
-            ann_summary = self._chunk_summarize_annotation(ann_list)
-            notes_summary = self._chunk_summarize_notetaker(note_list)
+            # Deterministic extraction -> build note -> optional findings polish
+            facts = self._extract_facts(ann_list, note_list)
+            final_json = self._build_final_json_from_facts(facts)
 
-            user_msg = (
-                f"Annotated summary:\n{ann_summary}\n\n"
-                f"Notetaker summary:\n{notes_summary}\n\n"
-                "Now produce a final post-op note in JSON format that conforms to the grammar."
-            )
-
-            final_prompt = (
-                f"{self.agent_prompt}\n"
-                f"<|im_start|>user\n"
-                f"{user_msg}\n"
-                f"<|im_end|>\n"
-                f"{self.bot_prefix}\n"
-            )
-            self._logger.debug(f"Final post-op prompt: {final_prompt[:500]}...")
-
-            raw_resp = self._ask_for_json(final_prompt)
-            if not raw_resp:
-                self._logger.error("Empty response received from vLLM")
-                return None
-                
-            self._logger.debug(f"PostOp raw response: {raw_resp[:500]}")
-
-            try:
-                # Clean the response further if needed
-                cleaned_resp = raw_resp.strip()
-                # If response contains JSON starting markers, extract only the JSON part
-                if "```json" in cleaned_resp:
-                    cleaned_resp = cleaned_resp.split("```json")[1].split("```")[0].strip()
-                elif "```" in cleaned_resp:
-                    cleaned_resp = cleaned_resp.split("```")[1].split("```")[0].strip()
-                
-                final_json = json.loads(cleaned_resp)
-                self._logger.debug(f"Successfully parsed JSON response")
-            except json.JSONDecodeError as e:
-                self._logger.warning(f"Failed to parse final post-op note JSON: {e}\nRaw={raw_resp[:500]}...")
-                # Try multiple fallback approaches
+            if self.llm_assist_findings:
                 try:
-                    # Approach 1: Look for patterns that look like JSON objects
-                    import re
-                    json_pattern = r'(\{[\s\S]*\})'
-                    matches = re.findall(json_pattern, raw_resp)
-                    if matches:
-                        potential_json = matches[0]
-                        self._logger.debug(f"Attempting to parse extracted JSON pattern: {potential_json[:500]}")
-                        final_json = json.loads(potential_json)
-                        self._logger.info("Successfully parsed JSON after regex extraction")
-                        return final_json
-                        
-                    # Approach 2: Try to complete truncated JSON
-                    if self._is_truncated_json(raw_resp):
-                        self._logger.warning("Detected truncated JSON, attempting to fix...")
-                        fixed_json = self._fix_truncated_json(raw_resp)
-                        if fixed_json:
-                            self._logger.info("Successfully reconstructed truncated JSON")
-                            return fixed_json
-                    
-                    # Approach 3: Create a fallback basic structure
-                    self._logger.warning("Creating fallback post-op note structure")
-                    import datetime
-                    fallback_json = {
-                        "procedure_information": {
-                            "procedure_type": "laparoscopic procedure",
-                            "date": datetime.datetime.now().strftime("%Y-%m-%d"),
-                            "duration": "Unknown",
-                            "surgeon": "Not specified"
-                        },
-                        "findings": ["Procedure data incomplete or corrupted"],
-                        "procedure_timeline": [],
-                        "complications": []
-                    }
-                    return fallback_json
-                except Exception as e2:
-                    self._logger.error(f"All JSON parsing attempts failed: {e2}")
-                    
-                    # Last resort: Create minimal structure
-                    import datetime
-                    return {
-                        "procedure_information": {
-                            "procedure_type": "Unknown procedure",
-                            "date": datetime.datetime.now().strftime("%Y-%m-%d"),
-                        },
-                        "findings": ["Error generating post-op note"]
-                    }
+                    refined = self._refine_findings_with_llm(facts, final_json.get("findings", ""))
+                    if refined:
+                        final_json["findings"] = refined
+                except Exception as e:
+                    self._logger.warning(f"LLM findings refinement failed; keeping deterministic findings. Error: {e}")
 
             post_op_file = os.path.join(procedure_folder, "post_op_note.json")
             self._save_post_op_note(final_json, post_op_file)
@@ -228,7 +180,7 @@ class PostOpNoteAgent(Agent):
             
         # Check for typical truncation patterns
         if text.rstrip().endswith(',') or text.rstrip().endswith(':') or text.rstrip().endswith('"'):
-            self._logger.warning(f"Potential truncated JSON: ends with delimiter")
+            self._logger.warning("Potential truncated JSON: ends with delimiter")
             return True
             
         try:
@@ -320,6 +272,314 @@ class PostOpNoteAgent(Agent):
         except Exception as e:
             self._logger.error(f"Error in _fix_truncated_json: {e}", exc_info=True)
             return None
+
+    # ----------------- Deterministic pipeline helpers -----------------
+    def _parse_ts(self, ts: str):
+        try:
+            return datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return None
+
+    def _format_duration(self, seconds):
+        if seconds is None:
+            return "Not specified"
+        try:
+            seconds = int(max(0, seconds))
+            h = seconds // 3600
+            m = (seconds % 3600) // 60
+            s = seconds % 60
+            return f"{h:02d}:{m:02d}:{s:02d}"
+        except Exception:
+            return "Not specified"
+
+    def _extract_facts(self, ann_list, note_list):
+        def ts_key(x):
+            t = x.get("timestamp")
+            dt = self._parse_ts(t) if isinstance(t, str) else None
+            return dt or datetime.min
+
+        anns = sorted([a for a in ann_list if isinstance(a, dict)], key=ts_key)
+        notes = sorted([n for n in note_list if isinstance(n, dict)], key=ts_key)
+
+        start_ts_str = None
+        end_ts_str = None
+        if anns:
+            start_ts_str = anns[0].get("timestamp") or None
+            end_ts_str = anns[-1].get("timestamp") or None
+        elif notes:
+            start_ts_str = notes[0].get("timestamp") or None
+            end_ts_str = notes[-1].get("timestamp") or None
+
+        duration_seconds = None
+        for a in reversed(anns):
+            if isinstance(a.get("elapsed_time_seconds"), (int, float)):
+                duration_seconds = a["elapsed_time_seconds"]
+                break
+        if duration_seconds is None and start_ts_str and end_ts_str:
+            d0 = self._parse_ts(start_ts_str)
+            d1 = self._parse_ts(end_ts_str)
+            if d0 and d1:
+                duration_seconds = max(0, int((d1 - d0).total_seconds()))
+
+        # Aggregate tools/anatomy (global)
+        tools_set = set()
+        anatomy_set = set()
+        for a in anns:
+            for t in a.get("tools", []) or []:
+                if isinstance(t, str) and t != "none":
+                    tools_set.add(t)
+            for an in a.get("anatomy", []) or []:
+                if isinstance(an, str) and an != "none":
+                    anatomy_set.add(an)
+
+        # Build a smoothed sequence of phases with dwell/consecutive thresholds
+        smoothed_segments = []  # list of {phase, start_time}
+        run_phase = None
+        run_count = 0
+        run_start_ts = None
+        accepted_phase = None
+        last_accept_dt = None
+
+        for a in anns:
+            phase = a.get("surgical_phase")
+            ts = a.get("timestamp") or ""
+            ts_dt = self._parse_ts(ts)
+            if not isinstance(phase, str) or not ts_dt:
+                continue
+
+            if phase == run_phase:
+                run_count += 1
+            else:
+                run_phase = phase
+                run_count = 1
+                run_start_ts = ts
+
+            # Consider accepting a new phase when run_count and dwell satisfied
+            if accepted_phase != run_phase and run_count >= self.phase_min_consecutive:
+                dwell_ok = True
+                if last_accept_dt is not None:
+                    dwell_ok = (ts_dt - last_accept_dt).total_seconds() >= self.phase_min_dwell_seconds
+                if dwell_ok:
+                    smoothed_segments.append({"phase": run_phase, "start_time": run_start_ts})
+                    accepted_phase = run_phase
+                    last_accept_dt = ts_dt
+
+        # Derive ordered phases and first seen times from smoothed segments
+        phases_ordered = []
+        phase_first_seen_time = {}
+        for seg in smoothed_segments:
+            ph = seg["phase"]
+            st = seg["start_time"]
+            if ph not in phase_first_seen_time:
+                phase_first_seen_time[ph] = st
+                phases_ordered.append(ph)
+
+        # Compute durations for smoothed segments
+        phase_durations = {}
+        for i, seg in enumerate(smoothed_segments):
+            ph = seg["phase"]
+            st = seg["start_time"]
+            st_dt = self._parse_ts(st)
+            if not st_dt:
+                continue
+            if i + 1 < len(smoothed_segments):
+                next_dt = self._parse_ts(smoothed_segments[i + 1]["start_time"]) or self._parse_ts(end_ts_str)
+            else:
+                next_dt = self._parse_ts(end_ts_str)
+            if next_dt:
+                phase_durations[ph] = phase_durations.get(ph, 0) + max(0, int((next_dt - st_dt).total_seconds()))
+
+        # Build phase events from smoothed segments
+        phase_events = [{"time": seg["start_time"], "event": f"Phase started: {seg['phase']}"} for seg in smoothed_segments]
+
+        note_events = []
+        complications_flags = []
+        blood_loss_estimate = None
+        antibiotic_prophylaxis = None
+        dvt_prophylaxis = None
+        abx_terms = [
+            "cefazolin", "ancef", "cefoxitin", "ceftriaxone", "metronidazole", "zosyn",
+            "piperacillin", "tazobactam", "augmentin", "amoxicillin", "ciprofloxacin",
+            "levofloxacin", "ertapenem"
+        ]
+        dvt_terms = [
+            "heparin", "enoxaparin", "lovenox", "lmwh", "compression boots", "boots",
+            "sequential compression", "scd", "stockings"
+        ]
+        for n in notes:
+            ts = n.get("timestamp") or ""
+            txt = (n.get("text") or "").strip()
+            if not txt:
+                continue
+            note_events.append({"time": ts, "event": f"Note: {txt}"})
+            low = txt.lower()
+            if any(k in low for k in ["bleed", "perforat", "converted", "complication", "leak", "injury", "spillage"]):
+                complications_flags.append(txt)
+            m = re.search(r"\b(?:ebl|blood\s*loss)\b\s*[:=-]?\s*(\d{1,5})\s*(ml|cc)?", low)
+            if m and not blood_loss_estimate:
+                val = m.group(1)
+                unit = m.group(2) or "ml"
+                blood_loss_estimate = f"{val} {unit}"
+            if any(term in low for term in abx_terms) and not antibiotic_prophylaxis:
+                antibiotic_prophylaxis = txt
+            if any(term in low for term in dvt_terms) and not dvt_prophylaxis:
+                dvt_prophylaxis = txt
+
+        timeline = sorted(phase_events + note_events, key=lambda e: self._parse_ts(e.get("time")) or datetime.min)
+        # Cap timeline length if configured
+        if self.timeline_max_entries and len(timeline) > self.timeline_max_entries:
+            omitted = len(timeline) - self.timeline_max_entries
+            keep_head = min(50, self.timeline_max_entries // 4)
+            keep_tail = self.timeline_max_entries - keep_head
+            ellipsis_event = {
+                "time": start_ts_str or "Not specified",
+                "event": f"… {omitted} events omitted …",
+            }
+            timeline = timeline[:keep_head] + [ellipsis_event] + timeline[-keep_tail:]
+        # Keep a compact copy of annotations for optional phase details
+        anns_compact = []
+        for a in anns:
+            anns_compact.append({
+                "timestamp": a.get("timestamp"),
+                "tools": a.get("tools", []),
+                "anatomy": a.get("anatomy", []),
+            })
+
+        facts = {
+            "start_time": start_ts_str,
+            "end_time": end_ts_str,
+            "duration_seconds": duration_seconds,
+            "phases_ordered": phases_ordered,
+            "phase_first_seen_time": phase_first_seen_time,
+            "phase_durations": phase_durations,
+            "tools": sorted(tools_set),
+            "anatomy": sorted(anatomy_set),
+            "timeline": timeline,
+            "annotations": anns_compact,
+            "complications_flags": complications_flags,
+            "blood_loss_estimate": blood_loss_estimate,
+            "antibiotic_prophylaxis": antibiotic_prophylaxis,
+            "dvt_prophylaxis": dvt_prophylaxis,
+        }
+        self._logger.debug(f"Extracted facts: {facts}")
+        return facts
+
+    def _build_final_json_from_facts(self, facts: dict) -> dict:
+        phases = facts.get("phases_ordered", [])
+        tools = facts.get("tools", [])
+        anatomy = facts.get("anatomy", [])
+        dur_str = self._format_duration(facts.get("duration_seconds"))
+        findings_parts = []
+        if phases:
+            findings_parts.append(f"Phases observed: {', '.join(phases)}.")
+        if tools:
+            findings_parts.append(f"Tools seen: {', '.join(tools)}.")
+        if anatomy:
+            findings_parts.append(f"Anatomy involved: {', '.join(anatomy)}.")
+        if dur_str and dur_str != "Not specified":
+            findings_parts.append(f"Approximate procedure duration: {dur_str}.")
+        if not findings_parts:
+            findings_parts.append("Findings: Not specified.")
+
+        complications = "None recorded"
+        if facts.get("complications_flags"):
+            complications = "; ".join(facts["complications_flags"])[:500]
+
+        post_op = {
+            "date_time": facts.get("start_time") or "Not specified",
+            "procedure_type": self.default_procedure_type,
+            "procedure_nature": self.default_procedure_nature,
+            "personnel": {
+                "surgeon": self.default_personnel.get("surgeon", "Not specified"),
+                "assistant": self.default_personnel.get("assistant", "Not specified"),
+                "anaesthetist": self.default_personnel.get("anaesthetist", "Not specified"),
+            },
+            "findings": " ".join(findings_parts),
+            "complications": complications,
+            "blood_loss_estimate": facts.get("blood_loss_estimate") or "Not specified",
+            "dvt_prophylaxis": facts.get("dvt_prophylaxis") or "Not specified",
+            "antibiotic_prophylaxis": facts.get("antibiotic_prophylaxis") or "Not specified",
+            "postoperative_instructions": "Not specified",
+            "timeline": [
+                {"time": (e.get("time") or "Not specified"), "event": (e.get("event") or "")[:500]}
+                for e in facts.get("timeline", [])
+            ],
+        }
+        # Optional extras: per‑phase summary and details
+        if self.include_phase_summary:
+            phase_summary = []
+            for ph in facts.get("phases_ordered", []):
+                st = facts.get("phase_first_seen_time", {}).get(ph)
+                dur = facts.get("phase_durations", {}).get(ph)
+                phase_summary.append({
+                    "phase": ph,
+                    "start_time": st or "Not specified",
+                    "duration": self._format_duration(dur),
+                    "duration_seconds": int(dur) if isinstance(dur, (int, float)) else None,
+                })
+            post_op["phase_summary"] = phase_summary
+
+        if self.include_phase_details:
+            # Build details by splitting annotations into segments based on smoothed start times
+            details = []
+            # Reconstruct smoothed segments as in facts
+            segs = []
+            for ph in facts.get("phases_ordered", []):
+                st = facts.get("phase_first_seen_time", {}).get(ph)
+                if st:
+                    segs.append({"phase": ph, "start_time": st})
+            segs = sorted(segs, key=lambda s: self._parse_ts(s["start_time"]) or datetime.min)
+            for i, seg in enumerate(segs):
+                ph = seg["phase"]
+                st_dt = self._parse_ts(seg["start_time"]) or datetime.min
+                en_dt = self._parse_ts(segs[i+1]["start_time"]) if i+1 < len(segs) else self._parse_ts(facts.get("end_time"))
+                seg_tools = set()
+                seg_anat = set()
+                for a in facts.get("annotations", []):
+                    at = self._parse_ts(a.get("timestamp"))
+                    if not at:
+                        continue
+                    if at >= st_dt and (en_dt is None or at < en_dt):
+                        for t in a.get("tools", []) or []:
+                            if isinstance(t, str) and t != "none":
+                                seg_tools.add(t)
+                        for an in a.get("anatomy", []) or []:
+                            if isinstance(an, str) and an != "none":
+                                seg_anat.add(an)
+                details.append({"phase": ph, "tools": sorted(seg_tools), "anatomy": sorted(seg_anat)})
+            post_op["phase_details"] = details
+        return post_op
+
+    def _refine_findings_with_llm(self, facts: dict, draft_findings: str) -> str:
+        lines = []
+        lines.append(f"Phases: {', '.join(facts.get('phases_ordered', [])) or 'None'}")
+        lines.append(f"Tools: {', '.join(facts.get('tools', [])) or 'None'}")
+        lines.append(f"Anatomy: {', '.join(facts.get('anatomy', [])) or 'None'}")
+        dur = self._format_duration(facts.get("duration_seconds"))
+        lines.append(f"Duration: {dur}")
+        fact_sheet = "\n".join(lines)
+
+        system = (
+            "You rewrite the 'findings' sentence for a post‑operative note. "
+            "You MUST ONLY rephrase the facts provided. Do not add any new facts, numbers, or names. "
+            "If a field is 'Not specified' or 'None', do not invent it. Keep it concise and clinical."
+        )
+        user = (
+            f"Facts (verbatim):\n{fact_sheet}\n\n"
+            f"Draft findings to polish:\n{draft_findings}\n\n"
+            "Rephrase into 1–3 concise sentences using only the facts."
+        )
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+        result = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            temperature=0.0,
+            max_tokens=self.ctx_length,
+        )
+        return (result.choices[0].message.content or "").strip()
 
     def _chunk_summarize_annotation(self, ann_list):
         if not ann_list:

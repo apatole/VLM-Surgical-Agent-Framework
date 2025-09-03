@@ -45,6 +45,29 @@ agent_prompt: |
   At the end, produce a final structured JSON as described in the grammar.
   This final JSON is the official "post-operative note."
 
+# Defaults to avoid hallucination – only used when the data does not contain these fields.
+defaults:
+  procedure_type: "laparoscopic cholecystectomy"
+  procedure_nature: "unknown"  # one of: elective, emergency, unknown
+  personnel:
+    surgeon: "Not specified"
+    assistant: "Not specified"
+    anaesthetist: "Not specified"
+
+# Control optional LLM assistance
+mode:
+  # If true, the agent will deterministically build the full post‑op JSON, then
+  # use the LLM ONLY to rephrase the 'findings' field (no new facts allowed).
+  llm_assist_findings: true
+
+# Optional smoothing and timeline controls
+smoothing:
+  phase_min_dwell_seconds: 15     # require a phase to persist at least this long to record a switch
+  phase_min_consecutive: 2        # require at least this many consecutive annotations for a new phase
+  timeline_max_entries: 250       # cap timeline length to keep note readable
+  include_phase_summary: true     # include a per‑phase summary section (non‑required field)
+  include_phase_details: true     # include tools/anatomy observed per phase (non‑required field)
+
 grammar: |
   {
     "type": "object",

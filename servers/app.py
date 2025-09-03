@@ -153,6 +153,14 @@ IMPORTANT: This is a TEXT-ONLY SUMMARY request. Do not attempt to identify instr
                             "name": "PostOpNoteAgent",
                             "response": "Final post-op note created. See post_op_note.json in the procedure folder."
                         }
+                        # Also send the structured note to the UI Summary tab via WebSocket
+                        try:
+                            web.send_message({
+                                "post_op_note": final_json,
+                                "summary_response": True
+                            })
+                        except Exception as ws_e:
+                            logging.error(f"Failed to send post-op note JSON to UI: {ws_e}")
                 else:
                     agent = agents.get(selected_agent_name)
                     if agent:
