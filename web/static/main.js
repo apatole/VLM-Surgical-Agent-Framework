@@ -812,6 +812,20 @@ function addNote(noteText, userMessage) {
   if (notesCount) {
     notesCount.textContent = parseInt(notesCount.textContent || '0') + 1;
   }
+
+  // Also reflect the note in the chat window for visibility
+  try {
+    const chatSnippet = (content || '').trim();
+    if (chatSnippet) {
+      const maxLen = 300;
+      const displayText = chatSnippet.length > maxLen ? chatSnippet.slice(0, maxLen - 1) + '…' : chatSnippet;
+      addMessageToChat(`📝 Note saved: ${displayText}`, 'agent');
+    } else {
+      addMessageToChat('📝 Note saved.', 'agent');
+    }
+  } catch (e) {
+    console.warn('Failed to add note echo to chat:', e);
+  }
 }
 
 // Function to edit an existing note
