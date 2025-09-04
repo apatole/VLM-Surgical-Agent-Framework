@@ -94,7 +94,7 @@ models/
 
 ### Fine‑Tuning Your Own Surgical Model
 
-If you want to adapt the framework to a different procedure (e.g., appendectomy, colectomy), you can fine‑tune a VLM and plug it into this stack with no code changes. See:
+If you want to adapt the framework to a different procedure (e.g., appendectomy, colectomy), you can fine‑tune a VLM and plug it into this stack with only config file changes. See:
 
 - [FINETUNE.md](FINETUNE.md) — end‑to‑end guide covering:
   - Data curation and scene metadata
