@@ -1,6 +1,6 @@
 # Finetuning the VLM for a New Surgical Procedure
 
-This section explains how to adapt the default `Llama-3.2-11B-Vision-Surgical-CholecT50` model to another procedure (e.g., appendectomy, colectomy, partial nephrectomy) using visual instruction tuning in the style of LLaVA. The output is a vLLM-servable checkpoint that plugs into this framework with no code changes.
+This section explains how to adapt the base model [Qwen/Qwen2.5-VL-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct) to another procedure (e.g., appendectomy, colectomy, partial nephrectomy) using [Visual Instruction Tuning](https://arxiv.org/pdf/2304.08485) in the style of LLaVA. The output is a vLLM-servable checkpoint that plugs into this framework with no code changes.
 
 **Scope & Safety:** Use de-identified data only. Models produced with this guide are research tools and not for clinical decision-making.
 
@@ -8,7 +8,7 @@ This section explains how to adapt the default `Llama-3.2-11B-Vision-Surgical-Ch
 
 ### 0. Choose a Base & Target
 
-* **Base:** Start from `nvidia/Llama-3.2-11B-Vision-Instruct` or the provided surgical checkpoint.
+* **Base:** Start from [Qwen/Qwen2.5-VL-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct) or your existing surgical checkpoint.
 * **Target:** Define a clear taxonomy for the new procedure:
     * **Phases/steps** (e.g., exposure → critical structure identification → division → closure)
     * **Key anatomy** (named structures, landmarks, pathological findings)
@@ -42,7 +42,7 @@ This section explains how to adapt the default `Llama-3.2-11B-Vision-Surgical-Ch
 
 ### 2. Generate Visual-Instruction Data (Teacher-Student)
 
-Following the *Visual Instruction Tuning* method, use a strong text-only LLM (e.g., a GPT-class model) as a "teacher." Provide the symbolic scene description from step 1 (phase/anatomy/tools/safety flags) and ask the teacher to write instruction-following Q&A grounded in that scene.
+Following the [Visual Instruction Tuning](https://arxiv.org/pdf/2304.08485) method, use a strong text-only LLM (e.g., a GPT-class model) as a "teacher." Provide the symbolic scene description from step 1 (phase/anatomy/tools/safety flags) and ask the teacher to write instruction-following Q&A grounded in that scene.
 
 Create **3 complementary sample types** per image:
 
