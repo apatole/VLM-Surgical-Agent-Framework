@@ -92,6 +92,17 @@ models/
   └── whisper/                                       ← Whisper models (auto‑downloaded)
 ```
 
+### Fine‑Tuning Your Own Surgical Model
+
+If you want to adapt the framework to a different procedure (e.g., appendectomy, colectomy), you can fine‑tune a VLM and plug it into this stack with no code changes. See:
+
+- [FINETUNE.md](FINETUNE.md) — end‑to‑end guide covering:
+  - Data curation and scene metadata
+  - Visual‑instruction data generation (teacher–student)
+  - Packing data in LLaVA‑style format
+  - Training (LoRA/QLoRA) and validation
+  - Exporting and serving with vLLM, and updating configs
+
 6. Setup: 
 
 * Edit ```scripts/start_app.sh``` if you need to change ports.
@@ -268,15 +279,6 @@ surgical_agentic_framework/
 │   ├── logging_utils.py
 │   └── response_handler.py
 ├── web/                    <-- Web interface assets
-│   ├── src/                <-- Vue.js components
-│   │   ├── App.vue
-│   │   ├── components/
-│   │   │   ├── Annotation.vue
-│   │   │   ├── ChatMessage.vue
-│   │   │   ├── Note.vue
-│   │   │   ├── PostOpNote.vue
-│   │   │   └── VideoCard.vue
-│   │   └── main.js
 │   ├── static/             <-- CSS, JS, and other static assets
 │   │   ├── audio.js
 │   │   ├── bootstrap.bundle.min.js
