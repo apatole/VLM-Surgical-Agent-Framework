@@ -1,6 +1,6 @@
 # Finetuning the VLM for a New Surgical Procedure
 
-This section explains how to adapt the base model [Qwen/Qwen2.5-VL-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct) to another procedure (e.g., appendectomy, colectomy, partial nephrectomy) using [Visual Instruction Tuning](https://arxiv.org/pdf/2304.08485) in the style of LLaVA. The output is a vLLM-servable checkpoint that plugs into this framework with no code changes.
+This section explains how to adapt the base model [Qwen/Qwen2.5-VL-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct) to another procedure (e.g., appendectomy, colectomy, partial nephrectomy) using [Visual Instruction Tuning](https://arxiv.org/pdf/2304.08485) in the style of LLaVA. The output is a vLLM-servable checkpoint that plugs into this framework with only config file changes.
 
 **Scope & Safety:** Use de-identified data only. Models produced with this guide are research tools and not for clinical decision-making.
 
