@@ -55,7 +55,20 @@ conda activate surgical_agent_framework
 pip install -r requirements.txt
 ```
 
+Note for Linux (PyAudio build): If `pip install pyaudio` fails with a missing header error like `portaudio.h: No such file or directory`, install the PortAudio development package first, then rerun pip install:
+
+```
+sudo apt-get update && sudo apt-get install -y portaudio19-dev
+pip install -r requirements.txt
+```
+
 4. Install Node.js dependencies (for UI development):
+
+Before installing, verify your Node/npm versions (Node ≥14; 18 LTS recommended):
+
+```
+node -v && npm -v
+```
 
 ```
 npm install
