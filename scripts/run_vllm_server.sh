@@ -11,29 +11,76 @@
 # limitations under the License.
 
 ################################################################################
-# Configurable parameters (override with env vars or CLI args as you like)
+# Configuration
+#
+# Single source of truth for the model path is configs/global.yaml (model_name).
+# You can override via env var VLLM_MODEL_NAME. If the on‑disk folder is
+# missing, optionally set MODEL_REPO (or add model_repo in configs/global.yaml)
+# so this script can auto‑download via huggingface‑cli.
 ################################################################################
-MODEL_REPO=${MODEL_REPO:-"nvidia/Llama-3.2-11B-Vision-Surgical-CholecT50"}
-MODEL_DIR=${MODEL_DIR:-"models/llm"}
+set -euo pipefail
+
+# Resolve repo root (script_dir/..)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Defaults
 PORT=${PORT:-8000}
+
+# Helper to extract a quoted YAML value by key from configs/global.yaml
+GLOBAL_CFG="${REPO_ROOT}/configs/global.yaml"
+read_yaml_key() {
+  local key="$1"
+  if [[ -f "${GLOBAL_CFG}" ]]; then
+    grep -E "^${key}:" "${GLOBAL_CFG}" | sed "s/^${key}:[[:space:]]*//" | sed 's/^"//' | sed 's/"$//'
+  fi
+}
+
+# 1) Determine model path from ENV > configs/global.yaml > default
+MODEL_NAME_REL="${VLLM_MODEL_NAME:-}"
+if [[ -z "${MODEL_NAME_REL}" ]]; then
+  MODEL_NAME_REL="$(read_yaml_key model_name || true)"
+fi
+if [[ -z "${MODEL_NAME_REL}" ]]; then
+  MODEL_NAME_REL="models/llm/Llama-3.2-11B-Vision-Surgical-CholecT50"
+fi
+
+# Make absolute model path (allow absolute path in config)
+if [[ "${MODEL_NAME_REL}" = /* ]]; then
+  MODEL_PATH="${MODEL_NAME_REL}"
+else
+  MODEL_PATH="${REPO_ROOT}/${MODEL_NAME_REL}"
+fi
+
+# 2) Determine optional repo for auto‑download
+MODEL_REPO_ENV="${MODEL_REPO:-}"
+MODEL_REPO_CFG="$(read_yaml_key model_repo || true)"
+MODEL_REPO_VAL="${MODEL_REPO_ENV:-${MODEL_REPO_CFG:-}}"
 
 
 ################################################################################
 # Resolve the on‑disk target path and download if necessary
 ################################################################################
-MODEL_NAME="$(basename "${MODEL_REPO}")"
-MODEL_PATH="${MODEL_DIR}/${MODEL_NAME}"
+MODEL_NAME="$(basename "${MODEL_PATH}")"
 
 # Kill on exit (graceful shutdown)
 trap 'echo "[run_vllm_server.sh] Shutting down…"; pkill -P $$ || true' EXIT
 
 if [[ ! -d "${MODEL_PATH}" ]]; then
   echo "[run_vllm_server.sh] Model not found at ${MODEL_PATH}"
-  echo "[run_vllm_server.sh] Downloading with huggingface‑cli …"
-  huggingface-cli download "${MODEL_REPO}" \
-      --local-dir "${MODEL_PATH}" \
-      --local-dir-use-symlinks False
-  echo "[run_vllm_server.sh] Download complete."
+  if [[ -n "${MODEL_REPO_VAL}" ]]; then
+    echo "[run_vllm_server.sh] Downloading from ${MODEL_REPO_VAL} with huggingface‑cli …"
+    huggingface-cli download "${MODEL_REPO_VAL}" \
+        --local-dir "${MODEL_PATH}" \
+        --resume-download \
+        --local-dir-use-symlinks False
+    echo "[run_vllm_server.sh] Download complete."
+  else
+    echo "[run_vllm_server.sh] No MODEL_REPO provided. Skipping auto‑download."
+    echo "  Set env MODEL_REPO or add 'model_repo' to configs/global.yaml,"
+    echo "  or manually download the model into: ${MODEL_PATH}"
+    echo "  Example: huggingface-cli download nvidia/${MODEL_NAME} --local-dir \"${MODEL_PATH}\" --local-dir-use-symlinks False"
+  fi
 fi
 
 
@@ -48,7 +95,10 @@ export TORCH_USE_CUDA_DSA=1
 # Launch vLLM in OpenAI‑compatible API mode
 ################################################################################
 echo "[run_vllm_server.sh] Starting vLLM server on port ${PORT} …"
-echo "Running ${MODEL_REPO} from: ${MODEL_PATH} ..."
+echo "Model path: ${MODEL_PATH}"
+if [[ -n "${MODEL_REPO_VAL}" ]]; then
+  echo "Model repo: ${MODEL_REPO_VAL}"
+fi
 python -m vllm.entrypoints.openai.api_server \
     --model "${MODEL_PATH}" \
     --port "${PORT}" \

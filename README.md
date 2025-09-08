@@ -32,7 +32,7 @@ The Surgical Agentic Framework Demo is a multimodal agentic AI framework tailore
 * Node.js 14.x or higher
 * CUDA-compatible GPU (recommended) for model inference
 * Microphone for voice input (optional)
-* 16GB+ RAM recommended
+* 16GB+ VRAM recommended
 
 ## Installation 
 
@@ -94,7 +94,7 @@ huggingface-cli download nvidia/Llama-3.2-11B-Vision-Surgical-CholecT50 \
 ```
 
 * Serving engine
-    * All LLMs are served through vLLM for streaming. Adjust the launch arguments in run_vllm_server.sh if you change model names or paths.
+    * All LLMs are served through vLLM for streaming. Change the model path once in `configs/global.yaml` under `model_name` — both the agents and `scripts/run_vllm_server.sh` read this. You can override at runtime with `VLLM_MODEL_NAME`. To enable auto‑download when the folder is missing, set `model_repo` in `configs/global.yaml` (or export `MODEL_REPO`).
 
 * Resulting folder layout
 
@@ -119,7 +119,7 @@ If you want to adapt the framework to a different procedure (e.g., appendectomy,
 6. Setup: 
 
 * Edit ```scripts/start_app.sh``` if you need to change ports.
-* Edit ```scripts/run_vllm_server.sh``` if you need to change quantization, model name, or VRAM utilization (4bit requires ~10GB VRAM).
+* Edit ```scripts/run_vllm_server.sh``` if you need to change quantization or VRAM utilization (4bit requires ~10GB VRAM). Model selection is controlled via `configs/global.yaml`.
 
 7. Create necessary directories:
 

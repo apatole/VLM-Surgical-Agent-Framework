@@ -154,18 +154,20 @@ Look for:
 models/llm/<Your-Procedure-Model>/
 ```
 
-#### 3. Update the server script `scripts/run_vllm_server.sh`:
-```bash
---model models/llm/<Your-Procedure-Model> --max-model-len 4096
+#### 3. Update the global agent config `configs/global.yaml` (single source of truth):
+```yaml
+# Relative path inside this repo to your exported model
+model_name: "models/llm/<Your-Procedure-Model>"
+
+# Optional: set this if you want the vLLM script to auto‑download
+# the model when the folder is missing
+# model_repo: "<org-or-user>/<Your-Procedure-Model>"
 ```
 
-#### 4. Update the global agent config `configs/global.yaml`:
-```bash
-model_name: "<Your-Procedure-Model>"
-```
+The vLLM server script (`scripts/run_vllm_server.sh`) reads `configs/global.yaml` automatically. You no longer need to edit the script to change models. You can still override at runtime with `VLLM_MODEL_NAME` (and `MODEL_REPO` for auto‑download).
 
 Also update the logic for the individual agent `.yaml` files to suit your procedure workflow.
 
-#### 5. Restart the stack (`npm start` or `./scripts/start_app.sh`).
+#### 4. Restart the stack (`npm start` or `./scripts/start_app.sh`).
 
 vLLM will now serve your finetuned model and the agents will follow your designed workflow. 
