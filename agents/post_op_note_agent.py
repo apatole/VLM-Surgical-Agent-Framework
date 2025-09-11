@@ -34,12 +34,20 @@ class PostOpNoteAgent(Agent):
         defaults = self.agent_settings.get("defaults", {}) or {}
         self.default_procedure_type = defaults.get("procedure_type", "laparoscopic cholecystectomy")
         self.default_procedure_nature = defaults.get("procedure_nature", "unknown")
-        default_personnel = defaults.get("personnel", {}) or {}
+        # Merge personnel defaults: base -> global.yaml -> agent-specific
+        try:
+            global_personnel = (getattr(self, "global_settings", {}) or {}).get("personnel", {}) or {}
+        except Exception:
+            global_personnel = {}
+        agent_personnel = (defaults.get("personnel", {}) or {})
         self.default_personnel = {
-            "surgeon": default_personnel.get("surgeon", "Not specified"),
-            "assistant": default_personnel.get("assistant", "Not specified"),
-            "anaesthetist": default_personnel.get("anaesthetist", "Not specified"),
+            "surgeon": "Not specified",
+            "assistant": "Not specified",
+            "anaesthetist": "Not specified",
         }
+        # Global fallbacks, then agent overrides take precedence
+        self.default_personnel.update(global_personnel)
+        self.default_personnel.update(agent_personnel)
         mode = self.agent_settings.get("mode", {}) or {}
         self.llm_assist_findings = bool(mode.get("llm_assist_findings", True))
 

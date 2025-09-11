@@ -1,0 +1,108 @@
+Patient Name: John Doe
+MRN: 123456
+DOB: 1980-05-21
+Age: 44
+Sex: Male
+
+Chief Complaint:
+  - Recurrent right upper quadrant (RUQ) abdominal pain for 6 months, worse after fatty meals, associated with nausea and bloating.
+  - No jaundice, no dark urine, no pale stools.
+
+History of Present Illness:
+  - Episodes of biliary colic 1–2 times per week, lasting 1–3 hours, sometimes radiating to the right shoulder.
+  - Emergency department visit 3 weeks ago for severe RUQ pain; pain improved with analgesics.
+  - Abdominal ultrasound (2025-01-04): multiple gallstones within gallbladder; gallbladder wall mildly thickened (3.5 mm); no pericholecystic fluid; common bile duct diameter 5 mm (not dilated).
+  - No fevers or rigors; no clinical evidence of cholangitis.
+
+Past Medical History:
+  - Hypertension (diagnosed 2018)
+  - Hyperlipidemia (diagnosed 2019)
+  - Prediabetes (A1c 6.0% in 2024)
+  - BMI 29 (overweight)
+
+Past Surgical History:
+  - Open appendectomy at age 18 (1998), uncomplicated.
+
+Medications:
+  - Lisinopril 10 mg PO daily (AM)
+  - Atorvastatin 20 mg PO nightly
+  - Metformin 500 mg PO BID (breakfast, dinner)
+  - PRN acetaminophen 500 mg PO q6h for pain
+
+Allergies:
+  - NKDA (No Known Drug Allergies)
+
+Family History:
+  - Mother: cholelithiasis in her 50s, s/p cholecystectomy
+  - Father: hypertension
+
+Social History:
+  - Occupation: Accountant
+  - Tobacco: Never smoker
+  - Alcohol: 1–2 glasses of wine/week
+  - Illicit drugs: Denies
+  - Lives with spouse and two children
+
+Review of Systems (relevant positives):
+  - Gastrointestinal: episodic RUQ pain, postprandial nausea; no vomiting, no hematemesis, no melena.
+  - Constitutional: no unintentional weight loss, no fevers.
+
+Physical Examination (Pre‑op clinic 2025-01-10):
+  - Vitals: BP 128/78, HR 78, RR 14, Temp 36.8°C, SpO2 99% RA
+  - General: Well-appearing, no acute distress
+  - Abdomen: Soft, non-distended; mild RUQ tenderness; negative rebound/guarding; no palpable masses
+  - Sclera anicteric; no jaundice
+
+Pre‑operative Labs (2025-01-10):
+  - CBC: WBC 8.5 K/µL; Hgb 14.3 g/dL; Hct 42.8%; Plt 252 K/µL
+  - CMP/LFTs: AST 45 U/L (mildly elevated), ALT 50 U/L (mildly elevated), Alk Phos 120 U/L (upper normal), Total bilirubin 1.2 mg/dL; Cr 0.9 mg/dL; eGFR > 90
+  - Lipase: 28 U/L (normal)
+
+Imaging:
+  - RUQ Ultrasound (2025-01-04): multiple mobile choleliths; gallbladder wall 3.5 mm; no sonographic Murphy sign during exam; CBD 5 mm; no intrahepatic biliary dilatation.
+
+Assessment:
+  - Symptomatic cholelithiasis; likely chronic cholecystitis without choledocholithiasis.
+  - ASA class II for anesthesia.
+
+Plan:
+  - Elective laparoscopic cholecystectomy with possible intraoperative cholangiogram (IOC) if indicated.
+  - Pre‑op: NPO after midnight; peri‑operative antibiotics: cefazolin 2 g IV within 60 min of incision; DVT prophylaxis per protocol.
+  - Post‑op: low‑fat diet advancement as tolerated, oral analgesia, early ambulation.
+
+Hospital Course Timeline:
+  - 2025-01-17: Admission for elective surgery preparation; NPO; labs reviewed; anesthesia evaluation completed.
+  - 2025-01-18: Laparoscopic cholecystectomy performed.
+      • Findings: inflamed gallbladder with multiple stones; no bile duct dilation; normal-appearing liver.
+      • Critical View of Safety achieved; cystic duct and cystic artery identified, clipped, and divided.
+      • No bile spillage; hemostasis achieved; estimated blood loss (EBL) 25 mL; no drains placed.
+      • No intraoperative complications.
+  - Pathology (final): chronic cholecystitis with cholelithiasis; no dysplasia or malignancy.
+  - Post‑op Day 0: Hemodynamically stable; pain controlled with scheduled acetaminophen/ibuprofen and PRN oxycodone; tolerating sips of water; ambulated in hallway.
+  - Post‑op Day 1 (2025-01-19): Tolerating low‑fat diet; passed flatus; voiding spontaneously.
+      • Labs: WBC 10.2 K/µL; AST 38 U/L; ALT 42 U/L; Alk Phos 115 U/L; Total bilirubin 1.0 mg/dL.
+      • Incisions clean, dry, intact; no signs of infection.
+  - 2025-01-19: Discharged home in stable condition.
+
+Discharge Medications (2025-01-19):
+  - Continue home meds: Lisinopril 10 mg daily; Atorvastatin 20 mg nightly; Metformin 500 mg BID.
+  - Pain: Acetaminophen 650 mg PO q6h PRN mild pain; Ibuprofen 400 mg PO q8h PRN moderate pain; Oxycodone 5 mg PO q6h PRN severe pain (3–5 tabs dispensed).
+  - Bowel regimen PRN: Docusate 100 mg PO BID.
+
+Discharge Instructions:
+  - Activity: Walk daily; avoid lifting >10 lbs for 1–2 weeks; return to work as tolerated (desk job ~1 week).
+  - Diet: Low‑fat diet for 1–2 weeks, then advance as tolerated.
+  - Wound care: Keep incisions clean and dry; shower allowed after 24 hours; no soaking/swimming for 2 weeks.
+  - Return precautions: fever >38.3°C, worsening abdominal pain, persistent vomiting, jaundice, redness/drainage from incisions.
+
+Follow‑Up:
+  - Surgical clinic appointment in 10–14 days for wound check and pathology review.
+
+Key Data Summary:
+  - Diagnosis: Symptomatic cholelithiasis; chronic cholecystitis.
+  - Procedure: Laparoscopic cholecystectomy (no drains; EBL 25 mL; no complications).
+  - Allergies: NKDA.
+  - Home meds: Lisinopril, Atorvastatin, Metformin.
+  - Social: Non‑smoker; minimal alcohol use.
+  - Post‑op course: Uncomplicated; discharged POD#1 in stable condition.
+

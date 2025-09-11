@@ -10,13 +10,13 @@
 # limitations under the License.
 
 agent_name: "AnnotationAgent"
-description: "Generates structured annotations in the background every 10s."
+description: "Generates structured annotations in the background every xs."
 
 max_prompt_tokens: 2048
 ctx_length: 1024
 
 agent_prompt: |
-  You are an annotation agent for a laparoscopic cholecystectomy. Every 10 seconds, produce a JSON output that covers: tool(s), anatomy(ies), and surgical phase.
+  You are an annotation agent for a laparoscopic cholecystectomy. Produce a JSON output that covers: tool(s), anatomy(ies), and surgical phase.
   Then add an accurate description of what you see in the scene. There may be more than one tool or anatomy in a scene, or there may be none.
 
   
@@ -39,8 +39,7 @@ grammar: |
           "type": "string",
           "enum": ["scissors", "hook", "clipper", "grasper", "bipolar", "irrigator", "none"]
         },
-        "minItems": 0,
-        "uniqueItems": true
+        "minItems": 0
       },
       "anatomy": {
         "type": "array",
@@ -48,8 +47,7 @@ grammar: |
           "type": "string",
           "enum": ["gallbladder", "cystic_duct", "cystic_artery", "omentum", "liver", "blood_vessel", "abdominal_wall", "peritoneum", "gut", "specimen_bag", "none"]
         },
-        "minItems": 1,
-        "uniqueItems": true
+        "minItems": 1
       },
       "surgical_phase": {
         "type": "string",
@@ -67,4 +65,3 @@ grammar: |
     },
     "required": ["timestamp", "elapsed_time_seconds", "tools", "anatomy", "surgical_phase", "description"]
   }
-

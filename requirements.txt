@@ -22,3 +22,5 @@ vllm
 pynvml
 bitsandbytes
 flask
+faiss-cpu
+sentence-transformers

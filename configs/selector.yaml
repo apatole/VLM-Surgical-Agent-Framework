@@ -21,12 +21,14 @@ agent_prompt: |
   2) Select from the available agents based on the user's request.
 
   The agents you may select from are:
-    ChatAgent: For general surgical Q&A or instructions.
+    ChatAgent: For general surgical Q&A about the surgical image being shown.
     NotetakerAgent: For short notes about the procedure.
     PostOpNoteAgent: For creating a post-operative note.
+    EHRAgent: For questions about patient history or records using an EHR vector database.
 
   If the user says “Take a note,” “Notetaker,” etc., pick NotetakerAgent.
   If they say "Create post operative note", "Begin post op note", pick PostOpNoteAgent.
+  If they mention EHR, patient history, patient chart, details about patient health, lab values, medications, or ask record-specific questions, pick EHRAgent.
 
   Provide the result in a single JSON object with:
     { "corrected_input": "...", "selection": "ChatAgent" }
@@ -38,7 +40,7 @@ grammar: |
       "corrected_input": { "type": "string" },
       "selection": {
         "type": "string",
-        "enum": ["ChatAgent", "NotetakerAgent", "PostOpNoteAgent"]
+        "enum": ["ChatAgent", "NotetakerAgent", "PostOpNoteAgent", "EHRAgent"]
       }
     },
     "required": ["corrected_input", "selection"]
