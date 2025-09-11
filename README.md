@@ -198,6 +198,7 @@ You can also use the development script for faster startup during development:
 3. Try speaking or Typing:
     * If you say "Take a note: The gallbladder is severely inflamed," the system routes you to NotetakerAgent.
     * If you say "What are the next steps after dissecting the cystic duct?" it routes you to ChatAgent.
+    * If you ask record-specific questions like "What meds is the patient on?" or "Any abnormal labs?", it routes you to EHRAgent (after you build the EHR index; see below).
 
 4. Background Annotations:
     * Meanwhile, ```AnnotationAgent``` writes a file like: ```procedure_2025_01_18__10_25_03_annotations.json``` in the annotations folder very 10 seconds with structured timeline data.
@@ -220,6 +221,40 @@ After accumulating annotations and notes during a procedure:
    * Key findings
    * Procedure timeline
    * Complications
+
+## EHR Q&A (Vector DB)
+
+This repository includes a lightweight EHR retrieval pipeline:
+
+- Build an EHR vector index from text/JSON files
+- Query the index via an EHRAgent with the same vLLM backend
+- A sample synthetic patient record is included at `ehr/patient_history.txt` to get you started
+
+Steps:
+
+1) Build the index from a directory of `.txt`, `.md`, or `.json` files
+
+```
+python scripts/ehr_build_index.py /path/to/ehr_docs ehr_index \
+  --model sentence-transformers/all-MiniLM-L6-v2 \
+  --chunk_tokens 256 --overlap_tokens 32
+```
+
+2) Point the agent at the index by editing `configs/ehr_agent.yaml`:
+
+- `ehr_index_dir`: set to `ehr_index` (or your output path)
+- Optionally adjust `retrieval_top_k`, `context_max_chars`
+
+3) You can test by querying via CLI (uses the same vLLM server):
+
+```
+python scripts/ehr_query.py --question "What medications is the patient on?"
+```
+
+4) Integration in app selection:
+
+- `If the user asks about EHR/records (e.g., "labs", "medications", "allergies"), the request is routed to EHRAgent automatically.
+- Make sure vLLM is running (`./scripts/run_vllm_server.sh`) and the EHR index exists.
 
 ## Troubleshooting
 
@@ -264,9 +299,13 @@ surgical_agentic_framework/
 │   ├── annotation_agent.py
 │   ├── base_agent.py
 │   ├── chat_agent.py
+│   ├── ehr_agent.py
 │   ├── notetaker_agent.py
 │   ├── post_op_note_agent.py
 │   └── selector_agent.py
+├── ehr/                    <-- Retrieval components for EHR
+│   ├── builder.py          <-- Builds FAISS index from text/JSON
+│   └── store.py            <-- Loads/queries the index
 ├── configs/                <-- Configuration files
 │   ├── annotation_agent.yaml
 │   ├── chat_agent.yaml
@@ -282,6 +321,8 @@ surgical_agentic_framework/
 │   ├── run_vllm_server.sh
 │   ├── start_app.sh        <-- Main script to launch everything
 │   └── start_web_dev.sh    <-- Web UI development script
+│   ├── ehr_build_index.py  <-- Build EHR vector index
+│   └── ehr_query.py        <-- Query EHRAgent via CLI
 ├── servers/                <-- Server implementations
 │   ├── app.py              <-- Main application server
 │   ├── uploaded_videos/    <-- Storage for uploaded videos

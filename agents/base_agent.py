@@ -79,8 +79,14 @@ class Agent(ABC):
         except Exception as e:
             # Non-fatal: proceed without global config
             self._logger.debug(f"No global config loaded: {e}")
+        # Expose the parsed global config for downstream agents (e.g., personnel placeholders)
+        try:
+            self.global_settings = global_cfg if isinstance(global_cfg, dict) else {}
+        except Exception:
+            self.global_settings = {}
 
         env_model_name = os.environ.get("VLLM_MODEL_NAME")
+        env_served_model_name = os.environ.get("VLLM_SERVED_MODEL_NAME")
         env_llm_url = os.environ.get("VLLM_URL")
 
         self.description = self.agent_settings.get('description', '')
@@ -96,12 +102,45 @@ class Agent(ABC):
         self._logger.debug(
             f"Agent config ENV VARS. model_name={env_model_name}"
         )
-        self.model_name = (
+        # Determine model name; can be an identifier or a path. If it's a relative path,
+        # normalize to an absolute path so it matches vLLM's served model name.
+        # Prefer a served model name if provided (client/server must match id)
+        served_model_name = (
+            env_served_model_name
+            or self.agent_settings.get('served_model_name')
+            or (global_cfg.get('served_model_name') if isinstance(global_cfg, dict) else None)
+        )
+
+        # Keep a hint of the configured (path-like) model name to detect families (e.g., Qwen‑VL)
+        self.model_name_hint = (
             env_model_name
             or self.agent_settings.get('model_name')
             or (global_cfg.get('model_name') if isinstance(global_cfg, dict) else None)
-            or 'llama3.2'
+            or ""
         )
+
+        if served_model_name:
+            self.model_name = served_model_name
+        else:
+            raw_model_name = (
+                env_model_name
+                or self.agent_settings.get('model_name')
+                or (global_cfg.get('model_name') if isinstance(global_cfg, dict) else None)
+                or 'llama3.2'
+            )
+            self.model_name = raw_model_name
+            try:
+                if isinstance(raw_model_name, str):
+                    # Heuristic: looks like a path if it contains a path separator
+                    if ("/" in raw_model_name or "\\" in raw_model_name):
+                        # If not absolute, make it absolute relative to repo root
+                        if not os.path.isabs(raw_model_name):
+                            repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                            abs_model = os.path.normpath(os.path.join(repo_root, raw_model_name))
+                            self.model_name = abs_model
+            except Exception:
+                # Non-fatal; keep raw string
+                self.model_name = raw_model_name
         self.publish_settings = self.agent_settings.get('publish', {})
         self.llm_url = (
             env_llm_url
@@ -113,6 +152,13 @@ class Agent(ABC):
         self._logger.debug(
             f"Agent config loaded. llm_url={self.llm_url}, model_name={self.model_name}"
         )
+
+    def _is_qwen_vl(self) -> bool:
+        try:
+            name = (self.model_name_hint or self.model_name or "").lower()
+        except Exception:
+            name = str(self.model_name).lower()
+        return ("qwen" in name) and ("vl" in name)
 
     def _wait_for_server(self, timeout=60):
         attempts = 0
@@ -148,39 +194,55 @@ class Agent(ABC):
             self._logger.debug(
                 f"Sending chat request to vLLM/OpenAI client. Model={self.model_name}, temperature={temperature}\nUser message:\n{user_message[:500]}"
             )
-            try:
-                request_kwargs = {
-                    "model": self.model_name,
-                    "messages": request_messages,
-                    "temperature": temperature,
-                    "max_tokens": self.ctx_length,
-                }
-                # If a JSON schema grammar is provided, use OpenAI-compatible response_format
-                if grammar:
-                    try:
-                        schema_dict = json.loads(grammar) if isinstance(grammar, str) else grammar
-                        request_kwargs["response_format"] = {
-                            "type": "json_schema",
-                            "json_schema": {
-                                "name": "structured_output",
-                                "schema": schema_dict,
-                                "strict": True,
-                            },
-                        }
-                        # Also include vLLM-specific guided_json for broader compatibility
-                        request_kwargs["extra_body"] = {"guided_json": schema_dict}
-                    except Exception as e:
-                        self._logger.error(f"Failed to parse grammar for response_format: {e}")
+            request_kwargs = {
+                "model": self.model_name,
+                "messages": request_messages,
+                "temperature": temperature,
+                "max_tokens": self.ctx_length,
+            }
+            # If a JSON schema grammar is provided, use OpenAI-compatible response_format
+            if grammar:
+                try:
+                    schema_dict = json.loads(grammar) if isinstance(grammar, str) else grammar
+                    request_kwargs["response_format"] = {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "structured_output",
+                            "schema": schema_dict,
+                            "strict": True,
+                        },
+                    }
+                    # Also include vLLM-specific guided_json for broader compatibility
+                    request_kwargs["extra_body"] = {"guided_json": schema_dict}
+                except Exception as e:
+                    self._logger.error(f"Failed to parse grammar for response_format: {e}")
 
+            try:
                 completion = self.client.chat.completions.create(**request_kwargs)
-                response_text = completion.choices[0].message.content if completion.choices else ""
-                if display_output and self.response_handler:
-                    self.response_handler.add_response(response_text)
-                    self.response_handler.end_response()
-                return response_text
             except Exception as e:
-                self._logger.error(f"vLLM chat request failed: {e}", exc_info=True)
-                return ""
+                msg = str(e)
+                # Fallback: drop structured output if server rejects the schema/guided_json
+                if ("400" in msg or "Bad Request" in msg or "Grammar error" in msg or "response_format" in msg or "guided_json" in msg) and grammar:
+                    self._logger.warning("Chat request failed with structured output; retrying without response_format/guided_json")
+                    request_kwargs.pop("response_format", None)
+                    if isinstance(request_kwargs.get("extra_body"), dict):
+                        request_kwargs["extra_body"].pop("guided_json", None)
+                        if not request_kwargs["extra_body"]:
+                            request_kwargs.pop("extra_body", None)
+                    try:
+                        completion = self.client.chat.completions.create(**request_kwargs)
+                    except Exception as e2:
+                        self._logger.error(f"vLLM chat request failed after fallback: {e2}", exc_info=True)
+                        return ""
+                else:
+                    self._logger.error(f"vLLM chat request failed: {e}", exc_info=True)
+                    return ""
+
+            response_text = completion.choices[0].message.content if completion.choices else ""
+            if display_output and self.response_handler:
+                self.response_handler.add_response(response_text)
+                self.response_handler.end_response()
+            return response_text
 
     def stream_image_response(
         self,
@@ -193,88 +255,161 @@ class Agent(ABC):
         extra_body: dict[str, Any] | None = None,
     ) -> str:
         """
-        Send a multimodal (text + image) request. The format is a *list* in
-        `content`, where every element has a “type” field (text, image_url,
-        image_pil, …).  We therefore build:
-
-        messages = [
-            {"role": "system", "content": "..."},
-            {"role": "user", "content": [
-                {"type": "text", "text": "..."},
-                {"type": "image_url",
-                 "image_url": {"url": "data:image/jpeg;base64,<raw>"}}
-            ]}
-        ]
+        Send a multimodal (text + image) request. Prefer the OpenAI Responses API
+        for images to avoid HF chat template issues that some VL models have when
+        `content` is a list.
         """
-        # 1 – extract the user text
+        # 1 – extract the user text
         try:
             user_message = prompt.split("<|im_start|>user\n")[-1].split("<|im_end|>")[0].strip()
-        except Exception:  # pragma: no cover
+        except Exception:
             user_message = prompt
 
-        # 2 – prepare base64 (no tmp file needed any more)
+        # 2 – prepare base64
         raw_b64 = self._extract_raw_base64(image_b64)
 
-        # 3 – optionally reinforce the existence of the image
+        # 3 – optionally reinforce the existence of the image
         modified_message = user_message
         if any(tok in user_message.lower() for tok in ("tool", "instrument")) and "image" not in user_message.lower():
             modified_message += " (Please look at the surgery image attached to this message.)"
 
-        # 4 – assemble OpenAI‑compatible messages
-        messages: list[dict[str, Any]] = []
-        if self.agent_prompt:
-            messages.append({"role": "system", "content": self.agent_prompt})
-        messages.append(
+        # 4 – build Inputs for Responses API
+        if self._is_qwen_vl():
+            image_part = {
+                "type": "input_image",
+                "image_data": {"data": raw_b64, "mime_type": "image/jpeg"},
+            }
+        else:
+            image_part = {
+                "type": "input_image",
+                "image_url": {"url": f"data:image/jpeg;base64,{raw_b64}"},
+            }
+
+        responses_input = [
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": modified_message},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{raw_b64}"},
-                    },
+                    {"type": "input_text", "text": modified_message},
+                    image_part,
                 ],
             }
-        )
+        ]
 
-        # 5 – send
-        request_kwargs = {
-            "model": self.model_name,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": self.ctx_length,
-        }
-        # Prefer modern response_format if grammar provided; fallback to extra_body passthrough
-        if grammar:
-            try:
-                schema_dict = json.loads(grammar) if isinstance(grammar, str) else grammar
-                request_kwargs["response_format"] = {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "structured_output",
-                        "schema": schema_dict,
-                        "strict": True,
-                    },
-                }
-                # Also include vLLM-specific guided_json for broader compatibility
-                request_kwargs["extra_body"] = {"guided_json": schema_dict}
-            except Exception as e:
-                self._logger.error(f"Failed to parse grammar for response_format (image): {e}")
-        elif extra_body is not None:
-            # Backward compatibility: allow callers to pass extra vLLM-specific knobs
-            request_kwargs["extra_body"] = extra_body
-
-        self._logger.debug("Multimodal chat request (%s)…", self.model_name)
+        answer = ""
         with Agent._llm_lock:
+            req = {
+                "model": self.model_name,
+                "input": responses_input,
+                "temperature": temperature,
+                "max_output_tokens": self.ctx_length,
+            }
+            # Prepare extra knobs for vLLM
+            extra_body: dict[str, Any] = {}
+            if self._is_qwen_vl():
+                # Help Qwen‑VL with larger vision inputs
+                extra_body["mm_processor_kwargs"] = {"max_pixels": 12845056}
+
+            if grammar:
+                try:
+                    schema_dict = json.loads(grammar) if isinstance(grammar, str) else grammar
+                    # For Responses API, avoid response_format (client may not support it)
+                    # Use vLLM-specific guided_json only.
+                    extra_body["guided_json"] = schema_dict
+                except Exception as e:
+                    self._logger.error(f"Failed to parse grammar for Responses API (image): {e}")
+
+            if extra_body:
+                req["extra_body"] = extra_body
+            elif extra_body is not None:
+                req["extra_body"] = extra_body
+
+            self._logger.debug("Multimodal request via Responses API (%s)…", self.model_name)
             try:
-                result = self.client.chat.completions.create(**request_kwargs)
-                answer = result.choices[0].message.content if result.choices else ""
-            except requests.exceptions.Timeout:
-                self._logger.error("vLLM request timed out")
-                raise TimeoutError("Model request timed out") from None
-            except Exception:
-                self._logger.exception("vLLM multimodal request failed")
-                return ""
+                result = self.client.responses.create(**req)
+                answer = getattr(result, "output_text", None) or ""
+                if not answer:
+                    # Generic fallback parsing
+                    data = result.model_dump() if hasattr(result, "model_dump") else None
+                    if isinstance(data, dict):
+                        if "output_text" in data:
+                            answer = data["output_text"]
+                        elif isinstance(data.get("output"), list) and data["output"]:
+                            first = data["output"][0]
+                            if isinstance(first, dict) and isinstance(first.get("content"), list) and first["content"]:
+                                c0 = first["content"][0]
+                                if isinstance(c0, dict):
+                                    answer = c0.get("text", "")
+            except Exception as e:
+                # Fallback to chat.completions (older path)
+                self._logger.warning(
+                    f"Responses API failed for multimodal: {e}. Falling back to chat.completions."
+                )
+                messages: list[dict[str, Any]] = []
+                if self.agent_prompt:
+                    messages.append({"role": "system", "content": self.agent_prompt})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": modified_message},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/jpeg;base64,{raw_b64}"},
+                            },
+                        ],
+                    }
+                )
+
+                request_kwargs = {
+                    "model": self.model_name,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": self.ctx_length,
+                }
+                if grammar:
+                    try:
+                        schema_dict = json.loads(grammar) if isinstance(grammar, str) else grammar
+                        request_kwargs["response_format"] = {
+                            "type": "json_schema",
+                            "json_schema": {
+                                "name": "structured_output",
+                                "schema": schema_dict,
+                                "strict": True,
+                            },
+                        }
+                        request_kwargs["extra_body"] = {"guided_json": schema_dict}
+                    except Exception as e2:
+                        self._logger.error(f"Failed to parse grammar (fallback path): {e2}")
+                elif extra_body is not None:
+                    request_kwargs["extra_body"] = extra_body
+
+                try:
+                    res2 = self.client.chat.completions.create(**request_kwargs)
+                    answer = res2.choices[0].message.content if res2.choices else ""
+                except Exception as e3:
+                    msg2 = str(e3)
+                    if ("400" in msg2 or "Bad Request" in msg2 or "Grammar error" in msg2 or "response_format" in msg2 or "guided_json" in msg2) and grammar:
+                        self._logger.warning("Fallback chat failed with structured output; retrying without response_format/guided_json")
+                        request_kwargs.pop("response_format", None)
+                        if isinstance(request_kwargs.get("extra_body"), dict):
+                            request_kwargs["extra_body"].pop("guided_json", None)
+                            if not request_kwargs["extra_body"]:
+                                request_kwargs.pop("extra_body", None)
+                        try:
+                            res2 = self.client.chat.completions.create(**request_kwargs)
+                            answer = res2.choices[0].message.content if res2.choices else ""
+                        except requests.exceptions.Timeout:
+                            self._logger.error("vLLM request timed out (fallback without schema)")
+                            raise TimeoutError("Model request timed out") from None
+                        except Exception:
+                            self._logger.exception("vLLM multimodal request failed (fallback without schema)")
+                            return ""
+                    else:
+                        if isinstance(e3, requests.exceptions.Timeout):
+                            self._logger.error("vLLM request timed out (fallback)")
+                            raise TimeoutError("Model request timed out") from None
+                        self._logger.exception("vLLM multimodal request failed (fallback)")
+                        return ""
 
         if display_output and self.response_handler:
             self.response_handler.add_response(answer)

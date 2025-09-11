@@ -32,7 +32,7 @@ GLOBAL_CFG="${REPO_ROOT}/configs/global.yaml"
 read_yaml_key() {
   local key="$1"
   if [[ -f "${GLOBAL_CFG}" ]]; then
-    grep -E "^${key}:" "${GLOBAL_CFG}" | sed "s/^${key}:[[:space:]]*//" | sed 's/^"//' | sed 's/"$//'
+    grep -E "^${key}:" "${GLOBAL_CFG}" | sed "s/^${key}:[[:space:]]*//" | sed 's/^"//' | sed 's/"$//' 
   fi
 }
 
@@ -56,6 +56,11 @@ fi
 MODEL_REPO_ENV="${MODEL_REPO:-}"
 MODEL_REPO_CFG="$(read_yaml_key model_repo || true)"
 MODEL_REPO_VAL="${MODEL_REPO_ENV:-${MODEL_REPO_CFG:-}}"
+
+# 3) Served model name (for client-side model id)
+SERVED_NAME_ENV="${SERVED_MODEL_NAME:-}"
+SERVED_NAME_CFG="$(read_yaml_key served_model_name || true)"
+SERVED_NAME_VAL="${SERVED_NAME_ENV:-${SERVED_NAME_CFG:-}}"
 
 
 ################################################################################
@@ -99,13 +104,18 @@ echo "Model path: ${MODEL_PATH}"
 if [[ -n "${MODEL_REPO_VAL}" ]]; then
   echo "Model repo: ${MODEL_REPO_VAL}"
 fi
+if [[ -n "${SERVED_NAME_VAL}" ]]; then
+  echo "Served model name: ${SERVED_NAME_VAL}"
+fi
 python -m vllm.entrypoints.openai.api_server \
     --model "${MODEL_PATH}" \
     --port "${PORT}" \
     --max-model-len "8192" \
     --max-num-seqs "1" \
-    --disable-mm-preprocessor-cache \
+    --mm-processor-cache-gb 0 \
     --load-format "bitsandbytes" \
     --quantization "bitsandbytes" \
     --gpu-memory-utilization 0.3 \
-    --enforce-eager
+    --enforce-eager \
+    --chat-template-content-format auto \
+    $( [[ -n "${SERVED_NAME_VAL}" ]] && echo --served-model-name "${SERVED_NAME_VAL}" )

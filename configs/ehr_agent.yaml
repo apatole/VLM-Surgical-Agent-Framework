@@ -1,0 +1,25 @@
+description: "EHR QA agent using retrieval-augmented generation over a vector store."
+user_prefix: "<|im_start|>user"
+bot_prefix: "<|im_start|>assistant"
+bot_rule_prefix: "<|im_start|>system"
+end_token: "<|im_end|>"
+
+# System prompt used by base_agent's generate_prompt
+agent_prompt: |
+  You are an EHR assistant that answers questions strictly using the provided EHR context.
+  If the answer is not explicitly present in the context, say: "I don't know." Keep answers concise and clinical.
+
+request: "{text}"
+ctx_length: 512
+max_prompt_tokens: 3000
+
+publish:
+  ags:
+    - "response"
+
+# Retrieval settings
+ehr_index_dir: "ehr_index"  # Path to the built FAISS index directory
+embedding_model_name: "sentence-transformers/all-MiniLM-L6-v2"
+retrieval_top_k: 5
+context_max_chars: 4000
+

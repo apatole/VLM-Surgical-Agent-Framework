@@ -17,7 +17,7 @@ from .base_agent import Agent
 
 class SelectorOutput(BaseModel):
     corrected_input: str
-    selection: Literal["ChatAgent", "NotetakerAgent", "PostOpNoteAgent"]
+    selection: Literal["ChatAgent", "NotetakerAgent", "PostOpNoteAgent", "EHRAgent"]
 
 class SelectorAgent(Agent):
     def __init__(self, settings_path, response_handler):
