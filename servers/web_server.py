@@ -278,7 +278,15 @@ class Webserver(threading.Thread):
                             # Store the frame for future use
                             self.lastProcessedFrame = frame_data
                         if 'user_input' in data and self.msg_callback:
-                            self._logger.debug(f"Sending user_input to msg_callback: {data}")
+                            try:
+                                preview = data.get('user_input')
+                                self._logger.debug(
+                                    "Sending user_input to msg_callback (len=%s, keys=%s)",
+                                    len(preview) if isinstance(preview, str) else 'n/a',
+                                    list(data.keys())
+                                )
+                            except Exception:
+                                self._logger.debug("Sending user_input to msg_callback (preview unavailable)")
                             self.msg_callback(data, 0, int(time.time() * 1000))
                     except json.JSONDecodeError:
                         self._logger.warning("Invalid JSON from client.")

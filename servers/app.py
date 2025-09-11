@@ -10,6 +10,7 @@
 # limitations under the License.
 
 import asyncio
+import re
 import logging
 import os
 import sys
@@ -26,10 +27,54 @@ from agents.annotation_agent import AnnotationAgent
 from agents.chat_agent import ChatAgent
 from agents.notetaker_agent import NotetakerAgent
 from agents.post_op_note_agent import PostOpNoteAgent
+from agents.ehr_agent import EHRAgent
 
 from servers.web_server import Webserver
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
+# Reduce verbosity of third‑party libraries to avoid dumping large payloads (e.g., base64 images)
+for noisy in [
+    "openai",
+    "openai._base_client",
+    "httpx",
+    "httpcore",
+    "httpcore.http11",
+    "websockets",
+    "websockets.server",
+]:
+    logging.getLogger(noisy).setLevel(logging.WARNING)
+
+# Install a redaction filter to scrub base64 images and large data blobs from all logs
+class _RedactDataFilter(logging.Filter):
+    _patterns = [
+        # data:image/...;base64,AAAA
+        (re.compile(r"data:image/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=\r\n]+"), "data:image/*;base64,[REDACTED]"),
+        # JSON fields like "frame_data":"data:image/jpeg;base64,...."
+        (re.compile(r'("frame_data"\s*:\s*")data:image/[A-Za-z0-9.+-]+;base64,[^"]+(" )?'), r'\1data:image/*;base64,[REDACTED]"'),
+        # Generic very long base64-like strings in JSON fields: "data":"AAAA..."
+        (re.compile(r'("data"\s*:\s*")[A-Za-z0-9+/=\r\n]{256,}(" )?'), r'\1[REDACTED]"'),
+    ]
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            msg = record.getMessage()
+            sanitized = msg
+            for pat, repl in self._patterns:
+                sanitized = pat.sub(repl, sanitized)
+            if sanitized != msg:
+                # Overwrite the message safely
+                record.msg = sanitized
+                record.args = ()
+        except Exception:
+            pass
+        return True
+
+_redact = _RedactDataFilter()
+logging.getLogger().addFilter(_redact)
+logging.getLogger('websockets').addFilter(_redact)
+logging.getLogger('websockets.server').addFilter(_redact)
+logging.getLogger('openai').addFilter(_redact)
+logging.getLogger('openai._base_client').addFilter(_redact)
 
 async def main():
     chat_history = ChatHistory()
@@ -90,6 +135,7 @@ IMPORTANT: This is a TEXT-ONLY SUMMARY request. Do not attempt to identify instr
             # Send result to UI with special flag for summary
             web.send_message({
                 "agent_response": response_data["response"],
+                "agent_name": response_data.get("name", "AI Assistant"),
                 "summary_response": True
             })
             return
@@ -183,13 +229,17 @@ IMPORTANT: This is a TEXT-ONLY SUMMARY request. Do not attempt to identify instr
                     # Pass along the original user input so the UI can infer note content/title
                     web.send_message({
                         "agent_response": response_data["response"],
+                        "agent_name": response_data.get("name", "AI Assistant"),
                         "is_note": True,
                         "original_user_input": payload.get('original_user_input', user_text),
                         "user_input": corrected_text,
                     })
                 else:
                     # Send result to UI
-                    web.send_message({"agent_response": response_data["response"]})
+                    web.send_message({
+                        "agent_response": response_data["response"],
+                        "agent_name": response_data.get("name", "AI Assistant"),
+                    })
             except Exception as e:
                 logging.error(f"Error processing user_input: {e}", exc_info=True)
 
@@ -224,11 +274,13 @@ IMPORTANT: This is a TEXT-ONLY SUMMARY request. Do not attempt to identify instr
     chat_agent = ChatAgent("configs/chat_agent.yaml", response_handler)
     notetaker_agent = NotetakerAgent("configs/notetaker_agent.yaml", response_handler)
     post_op_note_agent = PostOpNoteAgent("configs/post_op_note_agent.yaml", response_handler)
+    ehr_agent = EHRAgent("configs/ehr_agent.yaml", response_handler)
 
     agents = {
         "ChatAgent": chat_agent,
         "NotetakerAgent": notetaker_agent,
-        "PostOpNoteAgent": post_op_note_agent
+        "PostOpNoteAgent": post_op_note_agent,
+        "EHRAgent": ehr_agent,
     }
 
     try:

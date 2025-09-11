@@ -338,11 +338,13 @@ function handleServerMessage(message) {
 
   // Handle recognized text from audio
   if (message.recognized_text && message.asr_final) {
+    // Display the transcribed text in the chat stream as a user message
     addMessageToChat(message.recognized_text, 'user');
-    // Add the message to the frontend
+    // Do NOT populate the input bar; keep it clear like typed-submit behavior
     const chatInput = document.getElementById('chat-message-input');
     if (chatInput) {
-      chatInput.value = message.recognized_text;
+      chatInput.value = '';
+      chatInput.style.height = '48px';
     }
   }
 
@@ -364,8 +366,8 @@ function handleServerMessage(message) {
       addNote(message.agent_response, message.original_user_input || message.user_input || '');
     }
     else {
-      // Regular response - just add to chat
-      addMessageToChat(message.agent_response, 'agent');
+      // Regular response - just add to chat; include agent name if provided
+      addMessageToChat(message.agent_response, 'agent', message.agent_name);
 
       // Handle TTS for agent responses if enabled
       if (window.isTtsEnabled) {
@@ -1140,6 +1142,23 @@ function showToast(message, type = 'info', duration = 4000) {
   });
 }
 
+// Simple recent-duplicate suppression for chat messages
+const _recentMsgs = { user: [], agent: [] }; // keep last few messages with timestamps
+function _pushRecent(sender, text) {
+  const arr = _recentMsgs[sender] || (_recentMsgs[sender] = []);
+  const now = Date.now();
+  arr.push({ text, t: now });
+  // keep last 10 and trim older than 8 seconds
+  while (arr.length > 10) arr.shift();
+  _recentMsgs[sender] = arr.filter(it => now - it.t < 8000);
+}
+function _isRecentDuplicate(sender, text) {
+  const arr = _recentMsgs[sender] || [];
+  const now = Date.now();
+  // consider duplicate if same text seen in last 4 seconds
+  return arr.some(it => it.text === text && (now - it.t) < 4000);
+}
+
 // Chat functions
 function onChatMessageKey(event) {
   if (event.key === 'Enter' && !event.shiftKey) {
@@ -1537,7 +1556,7 @@ function completeFrameWithTextSend(text, frameData) {
   }
 }
 
-function addMessageToChat(message, sender = 'user') {
+function addMessageToChat(message, sender = 'user', agentName) {
   const chatHistoryContainer = document.getElementById('chat-history-container');
 
   // Check if this message already exists (to prevent duplicates)
@@ -1546,6 +1565,11 @@ function addMessageToChat(message, sender = 'user') {
       lastMessage.classList.contains(sender === 'user' ? 'user-message' : 'agent-message') &&
       lastMessage.querySelector('.message-content').textContent === message) {
     console.log("Duplicate message detected, not adding again");
+    return;
+  }
+  // Broader recent duplicate suppression (covers race-y double inserts)
+  if (_isRecentDuplicate(sender, message)) {
+    console.log("Recent duplicate suppressed for", sender);
     return;
   }
 
@@ -1571,13 +1595,14 @@ function addMessageToChat(message, sender = 'user') {
     `;
   } else {
     messageDiv.className = 'agent-message';
+    const displayName = agentName || 'AI Assistant';
     messageDiv.innerHTML = `
       <div class="flex items-center justify-between mb-0 -mt-1 -mx-1">
         <span class="flex items-center">
           <span class="avatar-icon bg-success-600">
             <i class="fas fa-robot"></i>
           </span>
-          <span class="text-[11px] text-success-300/90">AI Assistant</span>
+          <span class="text-[11px] text-success-300/90">${displayName}</span>
         </span>
         <span class="text-[10px] text-gray-400/80">${timeString}</span>
       </div>
@@ -1598,6 +1623,7 @@ function addMessageToChat(message, sender = 'user') {
   }
 
   chatHistoryContainer.appendChild(messageDiv);
+  _pushRecent(sender, message);
   chatHistoryContainer.scrollTop = chatHistoryContainer.scrollHeight;
 }
 
