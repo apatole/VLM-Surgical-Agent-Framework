@@ -69,6 +69,31 @@ get_model_name() {
     echo "models/llm/Llama-3.2-11B-Vision-Surgical-CholecT50"
 }
 
+# Function to get served model name following precedence: ENV > global.yaml > default
+get_served_model_name() {
+    # First check environment variable
+    if [ -n "$SERVED_MODEL_NAME" ]; then
+        echo "$SERVED_MODEL_NAME"
+        return
+    fi
+
+    # Then check global.yaml
+    local global_config="${REPO_PATH}/configs/global.yaml"
+    if [ -f "$global_config" ]; then
+        # Extract quoted served_model_name from valid YAML (expects quoted values)
+        local served_model_name=$(grep "^served_model_name:" "$global_config" | \
+                          sed 's/^served_model_name:[[:space:]]*//' | \
+                          sed 's/^"//' | sed 's/"$//')
+        if [ -n "$served_model_name" ]; then
+            echo "$served_model_name"
+            return
+        fi
+    fi
+
+    # Finally use hardcoded default
+    echo "surgical-vlm"
+}
+
 # Function to check if Docker is running
 check_docker() {
     if ! docker info >/dev/null 2>&1; then
@@ -268,6 +293,8 @@ run_vllm() {
     # Get model name following precedence: ENV > global.yaml > default
     local model_name=$(get_model_name)
     echo -e "${BLUE}💡 Using model: $model_name${NC}"
+    local served_model_name=$(get_served_model_name)
+    echo -e "${BLUE}💡 Using served model: $served_model_name${NC}"
 
     docker run -d \
         --name vlm-surgical-vllm \
@@ -285,7 +312,8 @@ run_vllm() {
         --max-num-seqs 8 \
         --disable-mm-preprocessor-cache \
         --load-format bitsandbytes \
-        --quantization bitsandbytes
+        --quantization bitsandbytes \
+        $( [[ -n "${served_model_name}" ]] && echo --served-model-name "${served_model_name}" )
     echo -e "${GREEN}✅ vLLM Server started${NC}"
 }
 
