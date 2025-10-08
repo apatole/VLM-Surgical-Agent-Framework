@@ -51,7 +51,7 @@ RUN mkdir -p /app/models/whisper
 
 # Copy necessary files
 COPY servers/whisper_online_server.py /app/servers/
-# COPY jfk.flac /app/
+COPY jfk.flac /app/
 
 # Set the port and healthcheck
 EXPOSE ${WHISPER_PORT}
@@ -61,4 +61,4 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
 # Use the following a entrypoint and allow user to append optional arguments
 # python3 /app/servers/whisper_online_server.py <optional arguments from docker run
 
-ENTRYPOINT ["python3", "/app/servers/whisper_online_server.py"]
+ENTRYPOINT ["python3", "/app/servers/whisper_online_server.py", "--warmup-file", "/app/jfk.flac"]

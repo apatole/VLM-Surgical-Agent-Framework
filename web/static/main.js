@@ -252,6 +252,289 @@ document.addEventListener('DOMContentLoaded', function() {
       document.body.classList.remove('overflow-hidden');
     }, 300);
   }
+
+  // Video source toggle logic
+  const uploadedRadio = document.getElementById('videoSourceUploaded');
+  const liveRadio = document.getElementById('videoSourceLive');
+  const liveStreamUrlContainer = document.getElementById('liveStreamUrlContainer');
+  const uploadedVideoWrapper = document.getElementById('uploadedVideoWrapper');
+  const liveStreamWrapper = document.getElementById('liveStreamWrapper');
+  const liveStreamIframe = document.getElementById('liveStreamIframe');
+  const loadLiveStreamBtn = document.getElementById('loadLiveStreamBtn');
+  const surgeryVideo = document.getElementById('surgery-video');
+  const fullscreenBtn = document.getElementById('fullscreen-btn');
+  const captureFrameBtn = document.getElementById('capture-frame-btn');
+
+  function setVideoSourceMode(mode) {
+    if (mode === 'uploaded') {
+      if (liveStreamUrlContainer) liveStreamUrlContainer.style.display = 'none';
+      if (fullscreenBtn) fullscreenBtn.disabled = false;
+      if (captureFrameBtn) captureFrameBtn.disabled = false;
+      // Disconnect WebRTC if connected
+      disconnectWebRTC();
+      // Clear srcObject and use src for uploaded videos
+      if (surgeryVideo) {
+        surgeryVideo.srcObject = null;
+        surgeryVideo.style.display = '';
+      }
+    } else if (mode === 'live') {
+      if (liveStreamUrlContainer) liveStreamUrlContainer.style.display = '';
+      if (fullscreenBtn) fullscreenBtn.disabled = false; // Enable fullscreen for live streams
+      if (captureFrameBtn) captureFrameBtn.disabled = false; // Enable frame capture for live streams
+      if (surgeryVideo) {
+        // Clear src and prepare for srcObject from WebRTC
+        surgeryVideo.src = '';
+        surgeryVideo.style.display = '';
+      }
+    }
+  }
+
+  if (uploadedRadio && liveRadio) {
+    uploadedRadio.addEventListener('change', function() {
+      if (this.checked) setVideoSourceMode('uploaded');
+    });
+    liveRadio.addEventListener('change', function() {
+      if (this.checked) setVideoSourceMode('live');
+    });
+  }
+
+  // WebRTC connection management
+  let webrtcConnection = null;
+  let isWebRTCConnected = false;
+
+  // WebRTC event handlers
+  const connectWebRTCBtn = document.getElementById('connectWebRTCBtn');
+  const disconnectWebRTCBtn = document.getElementById('disconnectWebRTCBtn');
+  const webrtcStatus = document.getElementById('webrtcStatus');
+
+  if (connectWebRTCBtn) {
+    connectWebRTCBtn.addEventListener('click', connectWebRTC);
+  }
+
+  if (disconnectWebRTCBtn) {
+    disconnectWebRTCBtn.addEventListener('click', disconnectWebRTC);
+  }
+
+  // WebRTC connection function
+  async function connectWebRTC() {
+    const urlInput = document.getElementById('liveStreamUrl');
+    const serverUrl = urlInput ? urlInput.value.trim() : 'http://localhost:8080';
+    const videoElement = document.getElementById('surgery-video');
+
+    if (!videoElement) {
+      console.error('Video element not found');
+      updateWebRTCStatus('Error: Video element not found', 'error');
+      return;
+    }
+
+    if (isWebRTCConnected) {
+      console.log('WebRTC already connected');
+      return;
+    }
+
+    try {
+      updateWebRTCStatus('Connecting...', 'connecting');
+      setWebRTCButtonsState(true, false);
+
+      // Connect to WebRTC stream using the provided template
+      const connection = await connectToWebRTCStream(serverUrl, videoElement);
+
+      webrtcConnection = connection;
+      isWebRTCConnected = true;
+
+      updateWebRTCStatus('Connected', 'connected');
+      setWebRTCButtonsState(false, true);
+
+      console.log('WebRTC connection established successfully');
+
+      // Start auto frame capture for live stream
+      startAutoFrameCapture();
+
+    } catch (error) {
+      console.error('Failed to connect to WebRTC stream:', error);
+      updateWebRTCStatus(`Error: ${error.message}`, 'error');
+      setWebRTCButtonsState(false, false);
+      isWebRTCConnected = false;
+      webrtcConnection = null;
+    }
+  }
+
+  // WebRTC disconnection function (improved cleanup like working example)
+  function disconnectWebRTC() {
+    if (webrtcConnection) {
+      try {
+        // Stop transceivers first (like working example)
+        if (webrtcConnection.getTransceivers) {
+          webrtcConnection.getTransceivers().forEach((transceiver) => {
+            if (transceiver.stop) {
+              transceiver.stop();
+            }
+          });
+        }
+
+        // Close peer connection
+        webrtcConnection.close();
+        console.log('WebRTC connection closed');
+      } catch (error) {
+        console.error('Error closing WebRTC connection:', error);
+      }
+      webrtcConnection = null;
+    }
+
+    // Clear video stream
+    const videoElement = document.getElementById('surgery-video');
+    if (videoElement) {
+      videoElement.srcObject = null;
+    }
+
+    isWebRTCConnected = false;
+    updateWebRTCStatus('Disconnected', 'disconnected');
+    setWebRTCButtonsState(false, false);
+
+    // Stop auto frame capture
+    stopAutoFrameCapture();
+
+    console.log('Disconnected from WebRTC stream');
+  }
+
+  // Make disconnectWebRTC globally accessible
+  window.disconnectWebRTC = disconnectWebRTC;
+
+  // Helper function to update WebRTC status
+  function updateWebRTCStatus(message, status) {
+    if (webrtcStatus) {
+      webrtcStatus.textContent = message;
+      webrtcStatus.className = 'ml-2 text-xs';
+
+      switch (status) {
+        case 'connecting':
+          webrtcStatus.className += ' text-yellow-400';
+          break;
+        case 'connected':
+          webrtcStatus.className += ' text-green-400';
+          break;
+        case 'error':
+          webrtcStatus.className += ' text-red-400';
+          break;
+        case 'disconnected':
+        default:
+          webrtcStatus.className += ' text-gray-400';
+          break;
+      }
+    }
+  }
+
+  // Helper function to manage button states
+  function setWebRTCButtonsState(connectDisabled, disconnectVisible) {
+    if (connectWebRTCBtn) {
+      connectWebRTCBtn.disabled = connectDisabled;
+    }
+    if (disconnectWebRTCBtn) {
+      disconnectWebRTCBtn.style.display = disconnectVisible ? 'inline-block' : 'none';
+    }
+  }
+
+  // WebRTC connection implementation based on provided template
+  async function connectToWebRTCStream(serverUrl, videoElement) {
+    try {
+      // 1. Get ICE servers
+      console.log(`Fetching ICE servers from ${serverUrl}/iceServers`);
+      const iceServersResponse = await fetch(`${serverUrl}/iceServers`);
+
+      if (!iceServersResponse.ok) {
+        throw new Error(`Failed to fetch ICE servers: ${iceServersResponse.status}`);
+      }
+
+      const serverIceServers = await iceServersResponse.json();
+
+      // Combine with default STUN server as fallback (like working example)
+      const iceServers = [
+        { urls: 'stun:stun.l.google.com:19302' },
+        ...(Array.isArray(serverIceServers) ? serverIceServers : [])
+      ];
+      console.log('Using ICE servers:', iceServers);
+
+      // 2. Create peer connection
+      const pc = new RTCPeerConnection({
+        sdpSemantics: 'unified-plan',
+        iceServers: iceServers
+      });
+
+      // 3. Handle video stream (using addEventListener like working example)
+      pc.addEventListener('track', (event) => {
+        console.log('Received track:', event.track.kind);
+        if (event.track.kind === 'video') {
+          console.log('Setting video stream to video element');
+          videoElement.srcObject = event.streams[0];
+          console.log('Video stream received and set');
+        }
+      });
+
+      // Handle ICE connection state changes
+      pc.addEventListener('iceconnectionstatechange', () => {
+        console.log('ICE connection state:', pc.iceConnectionState);
+        switch (pc.iceConnectionState) {
+          case 'connected':
+          case 'completed':
+            updateWebRTCStatus('Connected', 'connected');
+            break;
+          case 'disconnected':
+          case 'failed':
+            updateWebRTCStatus('Connection failed', 'error');
+            break;
+          case 'connecting':
+            updateWebRTCStatus('Connecting...', 'connecting');
+            break;
+        }
+      });
+
+      // Handle connection state changes (like working example)
+      pc.addEventListener('connectionstatechange', () => {
+        console.log('Connection state:', pc.connectionState);
+        if (pc.connectionState === 'failed') {
+          updateWebRTCStatus('Connection failed', 'error');
+        }
+      });
+
+      // 4. Setup and negotiate
+      pc.addTransceiver('video', { direction: 'recvonly' });
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      console.log('Created offer, sending to server');
+
+      // 5. Exchange with server
+      const response = await fetch(`${serverUrl}/offer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sdp: offer.sdp, type: offer.type })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const answer = await response.json();
+      console.log('Received answer from server');
+
+      // Validate answer before setting
+      if (!answer.sdp || !answer.type) {
+        throw new Error('Invalid SDP answer received from server');
+      }
+
+      await pc.setRemoteDescription(answer);
+      console.log('WebRTC negotiation completed successfully');
+
+      return pc;
+
+    } catch (error) {
+      console.error('WebRTC connection error:', error);
+      throw error;
+    }
+  }
+
+  // Default to uploaded video mode on load
+  setVideoSourceMode('uploaded');
 });
 
 // Set the current time in the welcome message and connect websocket
@@ -1911,8 +2194,12 @@ function captureVideoFrame() {
     return null;
   }
 
-  if (!videoElement.src || videoElement.src === window.location.href) {
-    console.warn('Video source is not set or invalid');
+  // Check if we have either a src (uploaded video) or srcObject (WebRTC stream)
+  const hasUploadedVideo = videoElement.src && videoElement.src !== window.location.href;
+  const hasWebRTCStream = videoElement.srcObject !== null;
+
+  if (!hasUploadedVideo && !hasWebRTCStream) {
+    console.warn('Video source is not set - no src or srcObject');
     return null;
   }
 
