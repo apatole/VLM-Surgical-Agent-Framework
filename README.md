@@ -83,14 +83,14 @@ npm install
     * Whisper (speech‑to‑text) checkpoints live in models/whisper/ (they will be downloaded automatically at runtime the first time you invoke Whisper).
 
 * Default LLM
-    * This repository is pre‑configured for [NVIDIA Llama‑3.2‑11B‑Vision‑Surgical‑CholecT50](https://huggingface.co/nvidia/Llama-3.2-11B-Vision-Surgical-CholecT50), a surgical‑domain fine‑tuned variant of Llama 3.2‑11B. You may choose to replace it with a finetuned VLM of your choosing.
+    * This repository is pre‑configured for [NVIDIA Qwen2.5-VL-7B-Surg-CholecT50](https://huggingface.co/nvidia/Qwen2.5-VL-7B-Surg-CholecT50), a surgical‑domain fine‑tuned variant of Qwen2.5-VL-7B. You may choose to replace it with a finetuned VLM of your choosing.
 
 Download the default model from Hugging Face with Git LFS:
 
 ```
 # Download the checkpoint into the expected folder
-huggingface-cli download nvidia/Llama-3.2-11B-Vision-Surgical-CholecT50 \
-  --local-dir models/llm/Llama-3.2-11B-Vision-Surgical-CholecT50 \
+huggingface-cli download nvidia/Qwen2.5-VL-7B-Surg-CholecT50 \
+  --local-dir models/llm/Qwen2.5-VL-7B-Surg-CholecT50 \
   --local-dir-use-symlinks False     
 ```
 
@@ -102,8 +102,8 @@ huggingface-cli download nvidia/Llama-3.2-11B-Vision-Surgical-CholecT50 \
 ```
 models/
   ├── llm/
-  │   └── Llama-3.2-11B-Vision-Surgical-CholecT50/   ← LLM model files
-  └── whisper/                                       ← Whisper models (auto‑downloaded)
+  │   └── Qwen2.5-VL-7B-Surg-CholecT50/   ← LLM model files
+  └── whisper/                            ← Whisper models (auto‑downloaded)
 ```
 
 ### Fine‑Tuning Your Own Surgical Model

@@ -42,7 +42,7 @@ if [[ -z "${MODEL_NAME_REL}" ]]; then
   MODEL_NAME_REL="$(read_yaml_key model_name || true)"
 fi
 if [[ -z "${MODEL_NAME_REL}" ]]; then
-  MODEL_NAME_REL="models/llm/Llama-3.2-11B-Vision-Surgical-CholecT50"
+  MODEL_NAME_REL="models/llm/Qwen2.5-VL-7B-Surg-CholecT50"
 fi
 
 # Make absolute model path (allow absolute path in config)
