@@ -66,7 +66,7 @@ get_model_name() {
     fi
 
     # Finally use hardcoded default
-    echo "models/llm/Llama-3.2-11B-Vision-Surgical-CholecT50"
+    echo "models/llm/Qwen2.5-VL-7B-Surg-CholecT50"
 }
 
 # Function to get served model name following precedence: ENV > global.yaml > default
@@ -103,11 +103,11 @@ check_docker() {
     echo -e "${GREEN}✅ Docker is running${NC}"
 }
 
-# Function to download the NVIDIA Llama-3.2-11B-Vision-Surgical-CholecT50 model
-download_nvidia_llama_model() {
-    local model_dir="${REPO_PATH}/models/llm/Llama-3.2-11B-Vision-Surgical-CholecT50"
+# Function to download the NVIDIA Qwen2.5-VL-7B-Surg-CholecT50 model
+download_nvidia_qwen_model() {
+    local model_dir="${REPO_PATH}/models/llm/Qwen2.5-VL-7B-Surg-CholecT50"
 
-    echo -e "\n${BLUE}📥 Downloading NVIDIA Llama-3.2-11B-Vision-Surgical-CholecT50 model...${NC}"
+    echo -e "\n${BLUE}📥 Downloading NVIDIA Qwen2.5-VL-7B-Surg-CholecT50 model...${NC}"
 
     # Install Hugging Face CLI if not present
     if ! command -v huggingface-cli &> /dev/null; then
@@ -124,10 +124,10 @@ download_nvidia_llama_model() {
     fi
 
     # Download the model using Hugging Face CLI
-    echo -e "${YELLOW}🔄 Downloading model using Hugging Face CLI (this may take a while - ~20GB)...${NC}"
+    echo -e "${YELLOW}🔄 Downloading model using Hugging Face CLI (this may take a while - ~14GB)...${NC}"
     echo -e "${BLUE}💡 Download can be resumed if interrupted${NC}"
 
-    huggingface-cli download nvidia/Llama-3.2-11B-Vision-Surgical-CholecT50 \
+    huggingface-cli download nvidia/Qwen2.5-VL-7B-Surg-CholecT50 \
         --local-dir "$model_dir" \
         --resume-download \
         --local-dir-use-symlinks False
@@ -141,26 +141,26 @@ download_nvidia_llama_model() {
 
 }
 
-# Function to check if NVIDIA Llama model exists and download if needed
-ensure_nvidia_llama_model() {
+# Function to check if NVIDIA Qwen model exists and download if needed
+ensure_nvidia_qwen_model() {
     local model_name=$(get_model_name)
     local model_dir="${REPO_PATH}/${model_name}"
     local model_config="${model_dir}/config.json"
 
     # Currently this function only handles downloading
-    # NVIDIA/Llama-3.2-11B-Vision-Surgical-CholecT50 model from Hugging Face.
-    if [[ "$model_name" != *"Llama-3.2-11B-Vision-Surgical-CholecT50"* ]]; then
+    # NVIDIA/Qwen2.5-VL-7B-Surg-CholecT50 model from Hugging Face.
+    if [[ "$model_name" != *"Qwen2.5-VL-7B-Surg-CholecT50"* ]]; then
         return 0
     fi
 
     if [ -f "$model_config" ]; then
-        echo -e "${GREEN}✅ NVIDIA Llama surgical model found at $model_dir${NC}"
+        echo -e "${GREEN}✅ NVIDIA Qwen surgical model found at $model_dir${NC}"
         return 0
     fi
 
-    echo -e "${YELLOW}⚠️  NVIDIA Llama surgical model not found at $model_dir${NC}"
+    echo -e "${YELLOW}⚠️  NVIDIA Qwen surgical model not found at $model_dir${NC}"
     echo -e "${BLUE}📥 Will download the model now...${NC}"
-    download_nvidia_llama_model
+    download_nvidia_qwen_model
     return $?
 }
 
@@ -272,9 +272,9 @@ stop_containers() {
 run_vllm() {
     echo -e "\n${BLUE}🚀 Starting vLLM Server...${NC}"
 
-    # Ensure the NVIDIA Llama surgical model is available (if needed)
-    if ! ensure_nvidia_llama_model; then
-        echo -e "${RED}❌ Failed to ensure NVIDIA Llama surgical model is available. Cannot start vLLM server.${NC}"
+    # Ensure the NVIDIA Qwen surgical model is available (if needed)
+    if ! ensure_nvidia_qwen_model; then
+        echo -e "${RED}❌ Failed to ensure NVIDIA Qwen surgical model is available. Cannot start vLLM server.${NC}"
         return 1
     fi
 

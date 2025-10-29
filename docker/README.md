@@ -132,7 +132,7 @@ rm -rf vllm
 docker run -it --rm --net host --gpus all \
   -v <path-to-repo>/models:/vllm-workspace/models \
   vlm-surgical-agents:vllm-openai-v0.8.3-dgpu \
-  --model models/llm/Llama-3.2-11B-lora-surgical-4bit \
+  --model models/llm/Qwen2.5-VL-7B-Surg-CholecT50 \
   --enforce-eager \
   --max-model-len 4096 \
   --max-num-seqs 8 \
