@@ -74,8 +74,15 @@ trap 'echo "[run_vllm_server.sh] Shutting down…"; pkill -P $$ || true' EXIT
 if [[ ! -d "${MODEL_PATH}" ]]; then
   echo "[run_vllm_server.sh] Model not found at ${MODEL_PATH}"
   if [[ -n "${MODEL_REPO_VAL}" ]]; then
-    echo "[run_vllm_server.sh] Downloading from ${MODEL_REPO_VAL} with huggingface‑cli …"
-    huggingface-cli download "${MODEL_REPO_VAL}" \
+    # Ensure hf CLI is available before attempting download
+    if ! command -v hf &> /dev/null; then
+      echo "[run_vllm_server.sh] Hugging Face CLI not found. Installing..."
+      pip install --upgrade huggingface-hub --user
+      export PATH="$HOME/.local/bin:$PATH"
+    fi
+
+    echo "[run_vllm_server.sh] Downloading from ${MODEL_REPO_VAL} with hf …"
+    hf download "${MODEL_REPO_VAL}" \
         --local-dir "${MODEL_PATH}" \
         --resume-download \
         --local-dir-use-symlinks False
@@ -84,7 +91,7 @@ if [[ ! -d "${MODEL_PATH}" ]]; then
     echo "[run_vllm_server.sh] No MODEL_REPO provided. Skipping auto‑download."
     echo "  Set env MODEL_REPO or add 'model_repo' to configs/global.yaml,"
     echo "  or manually download the model into: ${MODEL_PATH}"
-    echo "  Example: huggingface-cli download nvidia/${MODEL_NAME} --local-dir \"${MODEL_PATH}\" --local-dir-use-symlinks False"
+    echo "  Example: hf download nvidia/${MODEL_NAME} --local-dir \"${MODEL_PATH}\" --local-dir-use-symlinks False"
   fi
 fi
 

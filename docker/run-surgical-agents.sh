@@ -22,7 +22,7 @@ NC='\033[0m' # No Color
 # Get the absolute path of the repository (parent directory since we're in docker/)
 REPO_PATH=$(dirname $(pwd))
 
-# Ensure ~/.local/bin is in PATH (for huggingface-cli and other user-installed tools)
+# Ensure ~/.local/bin is in PATH (for hf and other user-installed tools)
 export PATH="$HOME/.local/bin:$PATH"
 
 # Detect architecture
@@ -110,7 +110,7 @@ download_nvidia_qwen_model() {
     echo -e "\n${BLUE}📥 Downloading NVIDIA Qwen2.5-VL-7B-Surg-CholecT50 model...${NC}"
 
     # Install Hugging Face CLI if not present
-    if ! command -v huggingface-cli &> /dev/null; then
+    if ! command -v hf &> /dev/null; then
         echo -e "${YELLOW}📦 Installing Hugging Face CLI...${NC}"
         pip install --upgrade huggingface-hub --user
         echo -e "${BLUE}💡 Installed to ~/.local/bin (already in PATH)${NC}"
@@ -119,15 +119,14 @@ download_nvidia_qwen_model() {
     # Create models/llm directory with proper permissions
     if [ ! -d "${REPO_PATH}/models/llm" ]; then
         echo -e "${YELLOW}📁 Creating models/llm directory...${NC}"
-        sudo mkdir -p "${REPO_PATH}/models/llm"
-        sudo chown -R $USER:$USER "${REPO_PATH}/models/llm"
+        mkdir -p "${REPO_PATH}/models/llm"
     fi
 
     # Download the model using Hugging Face CLI
     echo -e "${YELLOW}🔄 Downloading model using Hugging Face CLI (this may take a while - ~14GB)...${NC}"
     echo -e "${BLUE}💡 Download can be resumed if interrupted${NC}"
 
-    huggingface-cli download nvidia/Qwen2.5-VL-7B-Surg-CholecT50 \
+    hf download nvidia/Qwen2.5-VL-7B-Surg-CholecT50 \
         --local-dir "$model_dir" \
         --resume-download \
         --local-dir-use-symlinks False
