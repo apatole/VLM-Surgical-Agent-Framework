@@ -128,8 +128,6 @@ download_nvidia_qwen_model() {
 
     hf download nvidia/Qwen2.5-VL-7B-Surg-CholecT50 \
         --local-dir "$model_dir" \
-        --resume-download \
-        --local-dir-use-symlinks False
 
     if [ -f "$model_dir/config.json" ]; then
         echo -e "${GREEN}✅ Model downloaded successfully to $model_dir${NC}"
