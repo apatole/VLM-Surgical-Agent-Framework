@@ -84,8 +84,6 @@ if [[ ! -d "${MODEL_PATH}" ]]; then
     echo "[run_vllm_server.sh] Downloading from ${MODEL_REPO_VAL} with hf …"
     hf download "${MODEL_REPO_VAL}" \
         --local-dir "${MODEL_PATH}" \
-        --resume-download \
-        --local-dir-use-symlinks False
     echo "[run_vllm_server.sh] Download complete."
   else
     echo "[run_vllm_server.sh] No MODEL_REPO provided. Skipping auto‑download."
