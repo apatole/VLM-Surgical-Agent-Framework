@@ -89,7 +89,7 @@ Download the default model from Hugging Face with Git LFS:
 
 ```
 # Download the checkpoint into the expected folder
-huggingface-cli download nvidia/Qwen2.5-VL-7B-Surg-CholecT50 \
+hf download nvidia/Qwen2.5-VL-7B-Surg-CholecT50 \
   --local-dir models/llm/Qwen2.5-VL-7B-Surg-CholecT50 \
   --local-dir-use-symlinks False     
 ```
